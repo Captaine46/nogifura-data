@@ -23,6 +23,7 @@ aside { background: #211c28; color: white; border-right: 1px solid #40354c; over
 .list { display: grid; gap: 8px; }
 .list-item { display: grid; grid-template-columns: 58px 1fr; gap: 10px; align-items: center; padding: 8px; border: 1px solid #45384f; border-radius: 8px; background: #2b2433; cursor: pointer; }
 .list-item.no-thumb { grid-template-columns: 1fr; }
+.list-more { flex: none; min-height: 44px; border: 1px solid #665773; border-radius: 8px; background: #43314f; color: #f5effa; cursor: pointer; }
 .list-item.active { border-color: #d55ee4; background: #3b2b42; }
 .thumb { width: 58px; height: 58px; border-radius: 6px; object-fit: cover; background: #4c4254; border: 1px solid #665773; }
 .placeholder { width: 58px; height: 58px; display: grid; place-items: center; color: #ccb9d7; font-size: 12px; border-radius: 6px; background: #4c4254; border: 1px solid #665773; }

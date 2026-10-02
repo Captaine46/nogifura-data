@@ -1,6 +1,20 @@
 const DATA = window.VISUAL_DATA;
 const TAB_KEYS = {member: 'cards', center_memoria: 'centerMemoria', member_memoria: 'memberMemoria', series_coord: 'seriesCoordinates', synchro: 'synchro', synchro_calc: 'synchro', rank_exp: 'rankExp'};
+const TAB_LABELS = {member: 'メンバー', center_memoria: 'センターノギメモ', member_memoria: 'メンバーノギメモ', series_coord: 'シリーズコーデ', synchro: 'シンクロ', synchro_calc: 'シンクロ計算', rank_exp: 'Rank EXP'};
+const SEARCH_HINTS = {
+  member: 'メンバー名、スキル、ステータスを検索...',
+  center_memoria: 'メンバー名、センターノギメモ名、スキルを検索...',
+  member_memoria: 'メンバー名、メンバーノギメモ名、効果を検索...',
+  series_coord: 'メンバー名、シリーズコーデ名を検索...',
+  synchro: 'シンクロ名、効果、共鳴条件を検索...',
+  synchro_calc: 'メンバー名、ノギメモ名、スキルを検索...',
+  rank_exp: 'Rank EXPを検索...'
+};
 let tab = TAB_KEYS[location.hash.slice(1)] ? location.hash.slice(1) : 'member';
+function updateSearchLabels() {
+  $('search').placeholder = SEARCH_HINTS[tab];
+  $('search').ariaLabel = `${TAB_LABELS[tab]}${tab === 'synchro_calc' ? 'の名簿' : ''}を検索`;
+}
 let selectedId = null;
 let selectedMember = '';
 let selectedRarity = '';
@@ -53,8 +67,9 @@ function libraryMemberChoices() {
   return [...members].sort((a,b) => a[1].localeCompare(b[1], 'ja'));
 }
 function libraryChoices() {
+  const rarities = new Set(currentItems().map(card => card.rarity));
   return [
-    ['rarity', 'レアリティ', (tab === 'member' ? ['LR','UR','SSR','SR','R','N'] : ['SSR','SR','R']).map(x => [x,x])],
+    ['rarity', 'レアリティ', (tab === 'member' ? ['LR','UR','SSR','SR','R','N'] : ['SSR','SR','R']).filter(x => rarities.has(x)).map(x => [x,x])],
     ...(tab === 'member_memoria' ? [['bonus', '強化ボーナス', (DATA.libraryMemoriaBonuses || []).map(x => [String(x.id), x.name])]] :
       [['type', 'タイプ', tab === 'center_memoria' ? OWN_MEMORIA_TYPES.map(([id,name]) => [String(id),name]) : Object.entries(UNIT_TYPE)]]),
     ['member', 'メンバー', libraryMemberChoices()],
@@ -83,7 +98,7 @@ function renderLibraryDraft() {
   updateLibraryPreview();
 }
 function updateLibraryPreview() {
-  $('library-preview-count').textContent = `${filteredItems(libraryDraft, true).length}件のカード`;
+  $('library-preview-count').textContent = `${filteredItems(libraryDraft, true).length}件の${TAB_LABELS[tab]}`;
 }
 function openLibraryFilters() {
   const view = libraryView();
@@ -107,6 +122,30 @@ function commitLibraryFilters() {
 
 let synchroPage = 0;
 const pendingLoads = {};
+const pendingDetails = {};
+let detailRenderVersion = 0;
+function loadItemDetail(key, item) {
+  if (item.detailPart === undefined) return Promise.resolve(item);
+  const detailsKey = key + 'Details';
+  const cached = window.VISUAL_PARTS[detailsKey]?.[item.detailPart]?.[0];
+  if (cached) return Promise.resolve(cached);
+  const cacheKey = detailsKey + ':' + item.detailPart;
+  if (!pendingDetails[cacheKey]) {
+    pendingDetails[cacheKey] = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = window.VISUAL_MANIFEST[detailsKey][item.detailPart];
+      script.onload = () => {
+        const detail = window.VISUAL_PARTS[detailsKey]?.[item.detailPart]?.[0];
+        script.remove();
+        if (detail && detail.id === item.id) resolve(detail);
+        else { script.remove(); reject(new Error(script.src)); }
+      };
+      script.onerror = () => { script.remove(); reject(new Error(script.src)); };
+      document.head.appendChild(script);
+    }).then(detail => { delete pendingDetails[cacheKey]; return detail; }, error => { delete pendingDetails[cacheKey]; throw error; });
+  }
+  return pendingDetails[cacheKey];
+}
 function loadCategory(key) {
   if (!pendingLoads[key]) pendingLoads[key] = Promise.all(window.VISUAL_MANIFEST[key].map(src => new Promise((resolve, reject) => {
     const script = document.createElement('script');
@@ -122,6 +161,8 @@ function loadCategory(key) {
 }
 let renderVersion = 0;
 async function showCategory() {
+  updateSearchLabels();
+  ++detailRenderVersion;
   closeMobileDetail(false);
   const version = ++renderVersion;
   $('library-filter-dialog').close();
@@ -146,14 +187,44 @@ async function showCategory() {
 
 const $ = (id) => document.getElementById(id);
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const img = (src, alt='', cls='thumb') => src ? `<img class="${cls}" src="${escapeHtml(src)}" alt="${escapeHtml(alt)}">` : '';
+const deferImages = typeof window.IntersectionObserver === 'function';
+const img = (src, alt='', cls='thumb') => src ? `<img class="${escapeHtml(cls)}" loading="lazy" decoding="async" ${deferImages ? 'data-src' : 'src'}="${escapeHtml(src)}" alt="${escapeHtml(alt)}">` : '';
+function setupLazyImages() {
+  if (!deferImages) return;
+  const observed = new Set();
+  const observer = new IntersectionObserver(entries => {
+    for (const entry of entries) if (entry.isIntersecting) {
+      const image = entry.target;
+      image.src = image.dataset.src;
+      image.removeAttribute('data-src');
+      observer.unobserve(image);
+      observed.delete(image);
+    }
+  }, {rootMargin: '160px'});
+  const watch = root => {
+    const images = root.querySelectorAll ? [...root.querySelectorAll('img[data-src]')] : [];
+    if (root.matches?.('img[data-src]')) images.push(root);
+    for (const image of images) if (!observed.has(image)) {
+      observed.add(image);
+      observer.observe(image);
+    }
+  };
+  watch(document);
+  new MutationObserver(mutations => {
+    for (const image of observed) if (!image.isConnected) {
+      observer.unobserve(image);
+      observed.delete(image);
+    }
+    for (const mutation of mutations) for (const node of mutation.addedNodes) watch(node);
+  }).observe(document.body, {childList: true, subtree: true});
+}
 const skillIconSrc = (skill) => {
   return skill?.image || '';
 };
 const skillIcon = (skill, cls='skill-icon') => {
   const src = skillIconSrc(skill);
   const alt = skill?.name || skill?.Name || 'skill';
-  return src ? `<img class="${cls}" src="${escapeHtml(src)}" alt="${escapeHtml(alt)}">` : '';
+  return img(src, alt, cls);
 };
 const chip = (s) => s ? `<span class="chip">${escapeHtml(s)}</span>` : '';
 const UNIT_TYPE = Object.fromEntries(OWN_MEMBER_TYPES);
@@ -177,7 +248,7 @@ function prettyFormulaText(text) {
 const percentValue = (n) => Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
 function listSubtitle(x) {
-  if (tab === 'series_coord') return [x.rarity, `Rank${x.maxRank}`, `${x.parts.length}種`].join(' / ');
+  if (tab === 'series_coord') return [x.rarity, `Rank${x.maxRank}`, `${x.partCount ?? x.parts.length}種`].join(' / ');
   if (tab === 'member') return [x.characterName, x.rarity, UNIT_TYPE[x.unitType]].filter(Boolean).join(' / ');
   if (tab === 'center_memoria') return [x.rarity, x.shortName].filter(Boolean).join(' / ');
   if (tab === 'member_memoria') return [x.rarity, 'メンバーノギメモ'].filter(Boolean).join(' / ');
@@ -790,21 +861,48 @@ function filteredItems(filters = null, draft = false) {
   });
 }
 
+let listLoadObserver = null;
 function renderList() {
+  listLoadObserver?.disconnect();
   const items = filteredItems();
   $('sidebar-heading').textContent = tab === 'series_coord' ? 'シリーズコーデ' : '名簿';
   renderMemberControls();
   if (!items.some(x => String(x.id) === String(selectedId))) selectedId = items.length ? String(items[0].id) : null;
-  $('count').textContent = `${isLibraryTab() ? (libraryView().member || 'すべてのメンバー') + ' · ' : ''}${items.length}件`;
-  $('list').innerHTML = items.slice(0, 2000).map(x => `
+  $('count').textContent = `${isLibraryTab() ? (libraryView().member || 'すべてのメンバー') + ' · ' : ''}${items.length}件の${TAB_LABELS[tab]}`;
+  const listItemHtml = x => `
     <button type="button" aria-pressed="${String(x.id) === String(selectedId)}" class="list-item ${String(x.id) === String(selectedId) ? 'active' : ''} ${tab !== 'rank_exp' && !x.image ? 'no-thumb' : ''}" data-id="${escapeHtml(x.id)}">
       ${tab === 'rank_exp' ? '<div class="placeholder">EXP</div>' : (x.image ? img(x.image, x.displayName) : '')}
       <div>
         <div class="item-title">${escapeHtml(x.displayName || x.name || x.title)}</div>
         ${tab === 'rank_exp' ? '' : `<div class="item-sub">${escapeHtml(listSubtitle(x))}</div>`}
       </div>
-    </button>`).join('') || '<div class="list-empty">該当するカードはありません。<br>検索や絞り込みを変更してください。</div>';
-  document.querySelectorAll('.list-item').forEach(el => el.addEventListener('click', () => {
+    </button>`;
+  const batchSize = 60;
+  let shown = Math.min(items.length, Math.max(batchSize, Math.ceil((items.findIndex(x => String(x.id) === selectedId) + 1) / batchSize) * batchSize));
+  const moreHtml = () => shown < items.length ? '<button type="button" class="list-more">もっと表示</button>' : '';
+  $('list').innerHTML = items.slice(0, shown).map(listItemHtml).join('') + moreHtml() || `<div class="list-empty">該当する${TAB_LABELS[tab]}はありません。<br>検索や絞り込みを変更してください。</div>`;
+  const watchMore = () => {
+    const button = $('list').querySelector?.('.list-more');
+    if (button && deferImages) {
+      listLoadObserver?.disconnect();
+      listLoadObserver = new IntersectionObserver(entries => {
+        if (entries.some(entry => entry.isIntersecting)) appendMore();
+      }, {rootMargin: '160px'});
+      listLoadObserver.observe(button);
+    }
+  };
+  const appendMore = () => {
+    listLoadObserver?.disconnect();
+    $('list').querySelector('.list-more')?.remove();
+    const start = shown;
+    shown = Math.min(items.length, shown + batchSize);
+    $('list').insertAdjacentHTML('beforeend', items.slice(start, shown).map(listItemHtml).join('') + moreHtml());
+    watchMore();
+  };
+  $('list').onclick = event => {
+    if (event.target.closest('.list-more')) { appendMore(); return; }
+    const el = event.target.closest('.list-item');
+    if (!el) return;
     selectedId = el.dataset.id;
     document.querySelectorAll('.list-item').forEach(item => {
       const active = item.dataset.id === selectedId;
@@ -814,7 +912,8 @@ function renderList() {
     renderDetail();
     $('detail').scrollTop = 0;
     openMobileDetail(el);
-  }));
+  };
+  watchMore();
   if (!selectedId && items.length) selectedId = String(items[0].id);
 }
 
@@ -1347,14 +1446,14 @@ function renderSynchro() {
   const tiles = items.slice(synchroPage * pageSize, (synchroPage + 1) * pageSize);
   $('detail').innerHTML = `
     <h2>シンクロ一覧</h2>
-    <p class="source">${items.length}件 · 効果の説明はゲームのシンクロ表示に使われる文言です。所持カードやシンクロプレートで補った条件のチェックは「シンクロ計算」の名簿で行えます。</p>
+    <p class="source">${items.length}件のシンクロ · 効果の説明はゲームのシンクロ表示に使われる文言です。所持カードやシンクロプレートで補った条件のチェックは「シンクロ計算」の名簿で行えます。</p>
     <div class="synchro-pager"><button id="synchro-prev" ${synchroPage === 0 ? 'disabled' : ''}>前へ</button><span>${synchroPage + 1} / ${pages}</span><button id="synchro-next" ${synchroPage + 1 >= pages ? 'disabled' : ''}>次へ</button></div>
     <div class="synchro-gallery">${tiles.map(item => `<article class="synchro-tile">
       <div class="synchro-info"><h3>${escapeHtml(item.displayName)}</h3>
         <p class="synchro-effect">${escapeHtml((item.passives || []).map(p => p.text).filter(Boolean).join(' / ') || item.effectText || '効果の説明なし')}</p>
       </div>
       <div class="synchro-conditions"><p class="synchro-condition-count">共鳴条件（${(item.conditions || []).length}）</p>
-        <div class="synchro-faces">${(item.conditions || []).map(c => `<figure class="synchro-face" data-card-key="${escapeHtml(c.ownershipKey)}">${c.image ? `<img loading="lazy" src="${escapeHtml(c.image)}" alt="${escapeHtml(c.displayName)}">` : '<span>画像なし</span>'}<figcaption>${escapeHtml(c.displayName)}<br>${escapeHtml(c.subtitle)}</figcaption></figure>`).join('')}</div>
+        <div class="synchro-faces">${(item.conditions || []).map(c => `<figure class="synchro-face" data-card-key="${escapeHtml(c.ownershipKey)}">${c.image ? img(c.image, c.displayName, '') : '<span>画像なし</span>'}<figcaption>${escapeHtml(c.displayName)}<br>${escapeHtml(c.subtitle)}</figcaption></figure>`).join('')}</div>
       </div>
     </article>`).join('')}</div>`;
   $('synchro-prev').onclick = () => { synchroPage = Math.max(0, synchroPage - 1); renderDetail(); $('detail').scrollTop = 0; };
@@ -1394,10 +1493,27 @@ function renderRankExp(x) {
 }
 
 function renderDetail() {
+  const version = ++detailRenderVersion;
   const items = filteredItems();
-  const x = items.find(i => String(i.id) === String(selectedId)) || items[0];
-  if (!x) { $('detail').innerHTML = '<div class="empty">該当するデータはありません</div>'; return; }
+  let x = items.find(i => String(i.id) === String(selectedId)) || items[0];
+  if (!x) { $('detail').innerHTML = `<div class="empty">該当する${TAB_LABELS[tab]}はありません</div>`; return; }
   selectedId = String(x.id);
+  if (x.detailPart !== undefined) {
+    const key = TAB_KEYS[tab];
+    const cached = window.VISUAL_PARTS[key + 'Details']?.[x.detailPart]?.[0];
+    if (!cached) {
+      $('detail').innerHTML = '<p role="status">詳細を読み込み中…</p>';
+      loadItemDetail(key, x).then(() => {
+        if (version === detailRenderVersion) renderDetail();
+      }).catch(() => {
+        if (version !== detailRenderVersion) return;
+        $('detail').innerHTML = '<p>詳細を読み込めませんでした。</p><button id="retry-detail">再試行</button>';
+        $('retry-detail').onclick = renderDetail;
+      });
+      return;
+    }
+    x = cached;
+  }
   if (tab === 'member') renderMember(x);
   else if (tab === 'center_memoria') renderCenterMemoria(x);
   else if (tab === 'member_memoria') renderMemberMemoria(x);
@@ -1437,7 +1553,7 @@ function closeMobileDetail(restoreFocus = true) {
 }
 function openMobileDetail(trigger = null) {
   if (!isMobileDetailMode()) return;
-  $('mobile-detail-title').textContent = tab === 'series_coord' ? 'コーデ詳細' : 'カード詳細';
+  $('mobile-detail-title').textContent = `${TAB_LABELS[tab]}詳細`;
   const dialog = $('mobile-detail-dialog');
   if (dialog.open) return;
   mobileDetailReturn = {trigger, x: window.scrollX, y: window.scrollY, listTop: $('list').scrollTop, bodyTop: document.body.style.top, restoreFocus: true};
@@ -1495,11 +1611,15 @@ function setupMobileDetails() {
   syncMobileDetailMode();
 }
 function render() {
+  ++detailRenderVersion;
+  updateSearchLabels();
   syncMobileDetailMode();
   if (!DATA[TAB_KEYS[tab]]) return;
   scheduleReleaseRefresh();
   if (tab === 'synchro_calc') { if (DATA.roster) renderOwnedSynchro(); return; }
-  renderList(); renderDetail();
+  if (tab === 'synchro') { listLoadObserver?.disconnect(); $('list').innerHTML = ''; renderDetail(); return; }
+  renderList();
+  if (!isMobileDetailMode() || $('mobile-detail-dialog').open) renderDetail();
 }
 
 document.querySelectorAll('button[data-tab]').forEach(btn => btn.addEventListener('click', () => {
@@ -1530,11 +1650,16 @@ $('clear-filters').addEventListener('click', () => {
   $('search').value = '';
   applyMemberFilter();
 });
-$('search').addEventListener('input', () => { selectedId = null; synchroPage = 0; ownState.page = 0; render(); });
+let searchRenderTimer = null;
+$('search').addEventListener('input', () => {
+  clearTimeout(searchRenderTimer);
+  searchRenderTimer = setTimeout(() => { selectedId = null; synchroPage = 0; ownState.page = 0; render(); }, 120);
+});
 window.addEventListener('focus', refreshReleaseVisibility);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshReleaseVisibility(); });
 window.addEventListener('hashchange', () => {
   if (TAB_KEYS[location.hash.slice(1)]) { tab = location.hash.slice(1); selectedId = null; showCategory(); }
 });
 setupMobileDetails();
+setupLazyImages();
 showCategory();

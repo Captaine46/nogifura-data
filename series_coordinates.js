@@ -135,7 +135,7 @@ function renderSeriesCoordinates(series) {
   });
   const grade = series.gradeSetting;
   $('detail').innerHTML = `<div class="card series-intro"><div class="kind">シリーズコーデ</div><h2>${escapeHtml(series.displayName)}</h2><div class="meta">${chip(series.rarity)}${chip(series.parts.length + '種')}${chip('最高Rank' + series.maxRank)}${chip('強化Lv' + Math.max(...series.parts.flatMap(p => p.levels.map(r => r.maxGrowLevel))))}${chip('★')}</div></div>
-    <div class="card"><h3>シリーズ効果</h3>${seriesTable(['装備数', '効果'], series.setEffects.map(e => [e.EquipmentSetCount + '個', e.effectText]))}</div>
+    <div class="card"><h3>シリーズ効果</h3>${seriesTable(['装備数', '効果'], series.setEffects.map(e => [e.EquipmentSetCount + 'シリーズ', e.effectText]))}</div>
     <div class="card"><h3>最高Rank・強化最大の基本性能</h3>${seriesTable(['コーデ', '装備タイプ', 'Rank / Lv', '基本性能', 'LEGEND 最大Lv', 'ACE 最大Lv'], maximums)}</div>
     <div class="series-parts">${series.parts.map(p => seriesPartHtml(series, p)).join('')}</div>
     <div class="card"><h3>カスタマイズ</h3><p class="series-note">付与される能力は装備ごとに異なります。以下はシリーズ共通設定で、基本性能への合算値ではありません。</p>${seriesTable(['項目', '値'], [['追加性能の枠数', grade.CustomizationCount], ['レアリティ補正', grade.GradeCustomizeValue], ['シリーズ補正', series.setCustomizeValue], ['基本マニー', grade.BaseCustomizationMoney], ['基本コイン', grade.BaseCustomizationCoin], ['ロック基本コイン', grade.BaseCustomizationLockCoin], ['基本売却価格', grade.BaseSalePrice], ['リメイクポイント', grade.RemakePrice]])}</div>

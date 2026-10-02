@@ -4,15 +4,15 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>乃木坂的フラクタル データベース</title>
-<link rel="stylesheet" href="app.css">
-<link rel="stylesheet" href="ownership.css">
-<link rel="stylesheet" href="series_coordinates.css">
+<link rel="stylesheet" href="app.css?v=cec4954d4626">
+<link rel="stylesheet" href="ownership.css?v=b2c9c4fbfd0c">
+<link rel="stylesheet" href="series_coordinates.css?v=38b618a549bd">
 </head>
 <body>
 <header>
   <h1><span class="brand-mark">乃</span>乃木坂的フラクタル <span class="brand-sub">データベース</span></h1>
   <div class="topbar">
-    <input id="search" class="search" aria-label="カード・スキルを検索" placeholder="メンバー名、カード名、スキル、ステータスを検索..." />
+    <input id="search" class="search" aria-label="メンバーを検索" placeholder="メンバー名、スキル、ステータスを検索..." />
     <div class="tabs">
       <button data-tab="member" class="active">メンバー</button>
       <button data-tab="center_memoria">センターノギメモ</button>
@@ -45,7 +45,7 @@
       <p id="count" class="count" role="status"></p>
       <div id="series-controls" hidden><label for="series-rarity">レアリティ</label><select id="series-rarity"><option value="">すべて</option><option>LR</option><option>UR</option><option>SSR</option><option>SR</option><option>R</option></select></div>
     </div>
-    <p class="mobile-browse-hint">カードをタップすると詳細を大きく表示します。「一覧に戻る」か、詳細の先頭から下へスワイプすると一覧に戻れます。</p>
+    <p class="mobile-browse-hint">項目をタップすると詳細を大きく表示します。「一覧に戻る」か、詳細の先頭から下へスワイプすると一覧に戻れます。</p>
     <div id="list" class="list"></div>
   </aside>
   <section id="detail" class="detail"></section>
@@ -54,12 +54,12 @@
   <p>作者：<a href="https://x.com/Captaine_46" target="_blank" rel="noopener noreferrer">@Captaine_46（X）</a></p>
   <p>本サイトは「乃木坂的フラクタル」の非公式ファンサイトです。</p>
   <p>不具合・掲載情報の誤りのご報告、ご意見やアイデアは、<a href="https://x.com/Captaine_46" target="_blank" rel="noopener noreferrer">作者のXのDM</a>へお寄せください。</p>
-  <p>掲載情報・計算結果の正確性や最新性は保証していません。ゲーム内の情報を優先し、ご利用はご自身の判断と責任でお願いします。画像・名称等の権利は各権利者に帰属します。</p>
+  <p>掲載情報・計算結果の正確性や最新性は保証していません。ゲーム内の情報を優先してください。掲載内容は参考情報として、ご自身の判断でご活用いただけますと幸いです。画像・名称等の権利は各権利者に帰属します。</p>
 </footer>
 <dialog id="mobile-detail-dialog" aria-labelledby="mobile-detail-title" aria-describedby="mobile-detail-help">
   <div id="mobile-detail-toolbar" class="mobile-detail-toolbar">
     <div class="mobile-detail-grip" aria-hidden="true"></div>
-    <div class="mobile-detail-heading"><h2 id="mobile-detail-title">カード詳細</h2><button id="close-mobile-detail" type="button">一覧に戻る ×</button></div>
+    <div class="mobile-detail-heading"><h2 id="mobile-detail-title">メンバー詳細</h2><button id="close-mobile-detail" type="button">一覧に戻る ×</button></div>
     <p id="mobile-detail-help">詳細内は上下にスクロール。ボタン、または上のバー・詳細の先頭を下へスワイプで一覧へ。</p>
   </div>
 </dialog>
@@ -68,10 +68,10 @@
   <div id="library-filter-body" class="filter-dialog-body"></div>
   <div class="filter-dialog-footer"><button id="reset-library-draft" type="button">条件をクリア</button><span id="library-preview-count" role="status"></span><button id="apply-library-filters" class="primary-action" type="button">この条件で表示</button></div>
 </dialog>
-<script src="data/manifest.js"></script>
-<script src="ownership.js"></script>
-<script src="series_coordinates.js"></script>
+<script src="data/manifest.js?v=59f30ad8654c"></script>
+<script src="ownership.js?v=d985ae4cea77"></script>
+<script src="series_coordinates.js?v=d70df338aa15"></script>
 <script>if (!location.hash) location.hash = "synchro";</script>
-<script src="app.js"></script>
+<script src="app.js?v=20090cd3bfb7"></script>
 </body>
 </html>
