@@ -1,5 +1,6 @@
 'use strict';
 const OWN_COOKIE = 'nogifura_owned_v1_';
+const OWN_COOKIE_MAX_AGE = 31536000;
 const ownState = {keys: new Set(), scores: new Map(), awakenings: new Map(), bonusTarget: {role:'center',characterId:0}, view: 'roster', rosterKind: 'member', scoreCardId: 0, rank: 1, kind: 'member', filter: 'all', sort: 'roster', ascending: false, filters: {}, viewPrefs: {}, filtersOpen: false, page: 0, result: 'unlocked', resultPage: 0, loaded: false, storage: '', awakeningStorage: ''};
 const LEGACY_PLATE_PARTS = 4;
 
@@ -25,6 +26,23 @@ function readOwnedCookie(name) {
   const entry = (document.cookie || '').split(';').map(x => x.trim()).find(x => x.startsWith(name + '='));
   return entry ? entry.slice(name.length + 1) : '';
 }
+function writeOwnedCookie(name, value) {
+  document.cookie = `${name}=${value}; Max-Age=${OWN_COOKIE_MAX_AGE}; Path=${ownedCookiePath()}; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
+}
+function renewOwnedCookies() {
+  if (!['http:', 'https:'].includes(location.protocol)) return;
+  try {
+    const entries = (document.cookie || '').split(';').map(entry => entry.trim());
+    const suffixes = ['m', 'c', 'r', ...Array.from({length:LEGACY_PLATE_PARTS}, (_,i) => 'p' + i)];
+    for (const suffix of suffixes) {
+      const name = OWN_COOKIE + suffix;
+      const entry = entries.find(value => value.startsWith(name + '='));
+      // Refresh existing values before any calculator data or selections load.
+      if (entry) writeOwnedCookie(name, entry.slice(name.length + 1));
+    }
+  } catch (_) { /* Blocked Cookie access must not prevent the website opening. */ }
+}
+renewOwnedCookies();
 function loadOwned() {
   if (ownState.loaded) return;
   ownState.loaded = true;
@@ -103,7 +121,7 @@ function saveOwned() {
         const value = saved[kind];
         if (value.length > 3500) throw new Error('Cookie capacity');
         const name = OWN_COOKIE + suffix;
-        document.cookie = `${name}=${value}; Max-Age=31536000; Path=${ownedCookiePath()}; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
+        writeOwnedCookie(name, value);
         if (readOwnedCookie(name) !== value) throw new Error('Cookie unavailable');
       }
       ownState.storage = 'Cookie に保存済み（このブラウザ・約1年）';
@@ -303,6 +321,7 @@ function ownPhonetic(card) {
     .replace(/[ァ-ヶ]/g, char => String.fromCharCode(char.charCodeAt(0) - 0x60));
 }
 function sortOwnedRoster(filtered, allCards, sort, ascending = false, scores = ownState.scores, owned = ownState.keys) {
+  if (sort === 'original') return [...filtered];
   if (['roster','rarity','generation','phonetic','memoria_type','memoria_score'].includes(sort)) {
     const ranks = {N:1,R:2,SR:3,SSR:4,UR:5,LR:6};
     const direction = ascending ? 1 : -1;
@@ -364,10 +383,20 @@ function ownRosterPages(cards, size = 240) {
   }
   return pages;
 }
+function setOwnedCenterSort(sort) {
+  const saved = ownState.viewPrefs.center_memoria ||= {filter:'all',sort:'original',ascending:false,filters:{}};
+  saved.sort = sort === 'rarity' ? 'roster' : sort;
+  saved.ascending = false;
+  if (ownState.kind === 'center_memoria') {
+    ownState.sort = saved.sort;
+    ownState.ascending = saved.ascending;
+    ownState.page = 0;
+  }
+}
 function setOwnedKind(kind) {
   ownState.viewPrefs[ownState.kind] = {filter:ownState.filter,sort:ownState.sort,ascending:ownState.ascending,filters:ownState.filters};
   ownState.kind = kind;
-  const saved = ownState.viewPrefs[kind] || {filter:'all',sort:'roster',ascending:false,filters:{}};
+  const saved = ownState.viewPrefs[kind] || {filter:'all',sort:kind === 'center_memoria' ? 'original' : 'roster',ascending:false,filters:{}};
   ownState.filter=saved.filter; ownState.sort=saved.sort; ownState.ascending=saved.ascending; ownState.filters=saved.filters;
   ownState.page=0;
 }
@@ -455,7 +484,9 @@ function renderOwnedSynchro() {
       : dateOrder
         ? '現役カードの後に卒業メンバー、その後に OG を表示。各区分ではシリーズ内で最も早い記録日を基準に並べ、日付未設定は末尾。同シリーズは LR → N の順でまとめます。'
         : '現役カード、卒業日の古いメンバー、OG の順に区分し、選んだ項目だけ昇順／降順を切り替えます。期別・レアリティの同値は五十音、最後にカード順です。'
-    : dateOrder
+    : ownState.sort === 'original'
+      ? 'センターノギメモ一覧と同じ標準順。'
+      : dateOrder
       ? '開始日を基準に並べ、日付未設定は末尾です（サイト追加の並び順）。'
       : ownState.sort === 'memoria_score'
         ? 'スコア順 → レアリティ高い順 → カード順。スコアは所持カードのゲーム表示値を入力してください。未入力は 0 として扱います。'
@@ -471,7 +502,7 @@ function renderOwnedSynchro() {
     <div class="own-controls">
       <label>種類 <select id="own-kind" ${bonusView ? 'disabled' : ''}>${ownOptions([['member','メンバー'],['center_memoria','センターノギメモ']],ownState.kind)}</select></label>
       <label>表示 <select id="own-filter">${ownOptions([['all','すべて'],['owned','所持'],['missing','未所持']],ownState.filter)}</select></label>
-      <label>並び順 <span class="own-sort-row"><select id="own-sort">${ownOptions(ownState.kind === 'member' ? [['roster','レアリティ順'],['generation','期別順'],['phonetic','五十音順'],['newest','開始日：新しい順（追加）'],['oldest','開始日：古い順（追加）']] : [['roster','レアリティ順'],['memoria_score','スコア順'],['memoria_type','Type順'],['newest','開始日：新しい順（追加）'],['oldest','開始日：古い順（追加）']],ownState.sort)}</select>${dateOrder ? '' : `<button type="button" id="own-direction" aria-label="${ownState.ascending ? '昇順' : '降順'}。押すと逆順" title="並び順を反転">${ownState.ascending ? '昇順 ↑' : '降順 ↓'}</button>`}</span></label>
+      <label>並び順 <span class="own-sort-row"><select id="own-sort">${ownOptions(ownState.kind === 'member' ? [['roster','レアリティ順'],['generation','期別順'],['phonetic','五十音順'],['newest','開始日：新しい順（追加）'],['oldest','開始日：古い順（追加）']] : [['original','標準順'],['roster','レアリティ順'],['memoria_score','スコア順'],['memoria_type','Type順'],['newest','開始日：新しい順（追加）'],['oldest','開始日：古い順（追加）']],ownState.sort)}</select>${dateOrder || ownState.sort === 'original' ? '' : `<button type="button" id="own-direction" aria-label="${ownState.ascending ? '昇順' : '降順'}。押すと逆順" title="並び順を反転">${ownState.ascending ? '昇順 ↑' : '降順 ↓'}</button>`}</span></label>
     </div>${ownFilterPanel(characters)}<p class="source">${roster.length}枚 · ${orderDescription}</p>
     ${ownState.kind === 'center_memoria' && ownState.sort === 'memoria_score' ? `<div class="own-score-editor"><strong>所持スコア入力</strong>${scoreCards.length ? `<label>カード <select id="own-score-card">${ownOptions(scoreCards.map(card => [String(card.id),card.displayName]),String(ownState.scoreCardId))}</select></label><label>ゲーム表示スコア <input id="own-score-value" type="number" min="0" step="any" value="${ownState.scores.get(ownState.scoreCardId) || ''}" placeholder="0"></label>` : '<span>先にセンターノギメモを所持登録してください。</span>'}<small>入力したスコアはこのブラウザに保存します。</small></div>` : ''}
     ${ownPager('own-roster',ownState.page,pages)}

@@ -28,7 +28,11 @@ function libraryView() {
   return libraryViewPrefs[tab] ||= {filters: {}, member: '', rarity: '', sort: 'original'};
 }
 function setLibraryView(values) {
-  if (tab !== 'member') { Object.assign(libraryView(), values); return; }
+  if (tab !== 'member') {
+    Object.assign(libraryView(), values);
+    if (tab === 'center_memoria' && 'sort' in values) setOwnedCenterSort(values.sort);
+    return;
+  }
   if ('filters' in values) libraryFilters = values.filters;
   if ('member' in values) selectedMember = values.member;
   if ('rarity' in values) selectedRarity = values.rarity;
