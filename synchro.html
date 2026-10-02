@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>乃木坂的フラクタル データベース</title>
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="ownership.css">
+<link rel="stylesheet" href="series_coordinates.css">
+</head>
+<body>
+<header>
+  <h1><span class="brand-mark">乃</span>乃木坂的フラクタル <span class="brand-sub">データベース</span></h1>
+  <div class="topbar">
+    <input id="search" class="search" aria-label="カード・スキルを検索" placeholder="メンバー名、カード名、スキル、ステータスを検索..." />
+    <div class="tabs">
+      <button data-tab="member" class="active">メンバー</button>
+      <button data-tab="center_memoria">センターノギメモ</button>
+      <button data-tab="member_memoria">メンバーノギメモ</button>
+      <button data-tab="series_coord">シリーズコーデ</button>
+      <button data-tab="synchro">シンクロ</button>
+      <button data-tab="synchro_calc">シンクロ計算</button>
+      <button data-tab="rank_exp">Rank EXP</button>
+    </div>
+  </div>
+</header>
+<main>
+  <aside>
+    <div class="sidebar-tools">
+      <div id="sidebar-heading" class="sidebar-heading">名簿</div>
+      <div id="member-controls">
+        <label for="member-select" id="library-member-label">メンバーを選択</label>
+        <select id="member-select" aria-label="メンバーを選択"></select>
+        <label for="rarity-select">レアリティ</label>
+        <select id="rarity-select" aria-label="レアリティ">
+          <option value="">すべてのレアリティ</option>
+          <option>LR</option><option>UR</option><option>SSR</option><option>SR</option><option>R</option><option>N</option>
+        </select>
+        <div class="filter-actions"><button id="open-library-filters" type="button" aria-haspopup="dialog">詳細フィルター <span id="filter-badge">0</span></button></div>
+        <div id="active-library-filters" class="active-library-filters"></div>
+        <label for="library-sort">並び順</label>
+        <select id="library-sort"><option value="original">標準順</option><option value="rarity">レアリティ順</option><option value="generation">期別順</option><option value="phonetic">五十音順</option><option value="newest">開始日：新しい順</option></select>
+        <button id="clear-filters" class="clear-filters" type="button">絞り込みをリセット</button>
+      </div>
+      <p id="count" class="count" role="status"></p>
+      <div id="series-controls" hidden><label for="series-rarity">レアリティ</label><select id="series-rarity"><option value="">すべて</option><option>LR</option><option>UR</option><option>SSR</option><option>SR</option><option>R</option></select></div>
+    </div>
+    <p class="mobile-browse-hint">カードをタップすると詳細を大きく表示します。「一覧に戻る」か、詳細の先頭から下へスワイプすると一覧に戻れます。</p>
+    <div id="list" class="list"></div>
+  </aside>
+  <section id="detail" class="detail"></section>
+</main>
+<footer class="site-footer">
+  <p>作者：<a href="https://x.com/Captaine_46" target="_blank" rel="noopener noreferrer">@Captaine_46（X）</a></p>
+  <p>本サイトは「乃木坂的フラクタル」の非公式ファンサイトです。</p>
+  <p>不具合・掲載情報の誤りのご報告、ご意見やアイデアは、<a href="https://x.com/Captaine_46" target="_blank" rel="noopener noreferrer">作者のXのDM</a>へお寄せください。</p>
+  <p>掲載情報・計算結果の正確性や最新性は保証していません。ゲーム内の情報を優先し、ご利用はご自身の判断と責任でお願いします。画像・名称等の権利は各権利者に帰属します。</p>
+</footer>
+<dialog id="mobile-detail-dialog" aria-labelledby="mobile-detail-title" aria-describedby="mobile-detail-help">
+  <div id="mobile-detail-toolbar" class="mobile-detail-toolbar">
+    <div class="mobile-detail-grip" aria-hidden="true"></div>
+    <div class="mobile-detail-heading"><h2 id="mobile-detail-title">カード詳細</h2><button id="close-mobile-detail" type="button">一覧に戻る ×</button></div>
+    <p id="mobile-detail-help">詳細内は上下にスクロール。ボタン、または上のバー・詳細の先頭を下へスワイプで一覧へ。</p>
+  </div>
+</dialog>
+<dialog id="library-filter-dialog" aria-labelledby="library-filter-title">
+  <div class="filter-dialog-head"><div><div class="dialog-eyebrow">名簿</div><h2 id="library-filter-title">詳細フィルター</h2><p>同じ分類は「いずれか」、異なる分類は「すべて」に一致。</p></div><button id="close-library-filters" type="button" aria-label="フィルターを閉じる">閉じる ×</button></div>
+  <div id="library-filter-body" class="filter-dialog-body"></div>
+  <div class="filter-dialog-footer"><button id="reset-library-draft" type="button">条件をクリア</button><span id="library-preview-count" role="status"></span><button id="apply-library-filters" class="primary-action" type="button">この条件で表示</button></div>
+</dialog>
+<script src="data/manifest.js"></script>
+<script src="ownership.js"></script>
+<script src="series_coordinates.js"></script>
+<script>if (!location.hash) location.hash = "synchro";</script>
+<script src="app.js"></script>
+</body>
+</html>

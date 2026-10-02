@@ -1,0 +1,45 @@
+#series-controls label { display: block; color: #d4c6df; margin: 12px 0 6px; font-size: 12px; }
+#series-controls select { width: 100%; min-height: 42px; border: 1px solid #746180; border-radius: 8px; padding: 8px; background: #352a40; color: white; font: inherit; }
+.series-parts { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,360px),1fr)); gap: 12px; margin-bottom: 12px; }
+.exclusive-coordinate { min-width: 0; }
+.exclusive-variants { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.exclusive-variant { display: grid; justify-items: center; align-content: start; gap: 4px; width: 106px; min-height: 126px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: #faf7fc; color: #74617f; }
+.exclusive-variant.active { border-color: #9368af; background: #eee3f5; box-shadow: inset 0 0 0 1px #9368af; }
+.exclusive-variant:focus-visible { outline: 2px solid #9368af; outline-offset: 2px; }
+.exclusive-variant-image { width: 58px; height: 58px; object-fit: contain; border-radius: 6px; }
+.exclusive-variant b { font-size: 13px; color: #4f355e; }
+.exclusive-variant small { color: #74617f; font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
+.series-part { min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 14px; }
+.series-part-head { display: grid; grid-template-columns: 72px minmax(0,1fr); gap: 12px; align-items: center; }
+.series-part-image { width: 72px; height: 72px; object-fit: contain; background: #f4edf8; border: 1px solid var(--line); border-radius: 8px; }
+.series-part h3 { margin: 4px 0; font-size: 16px; color: #4f355e; overflow-wrap: anywhere; }
+.series-part-head p { font-size: 12px; color: var(--muted); margin: 0; }
+.series-part-inputs { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin: 14px 0; }
+.series-part-inputs label { display: grid; gap: 5px; font-size: 12px; color: #655471; }
+.series-part-inputs input, .series-part-inputs select { min-height: 40px; width: 100px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; background: white; }
+.series-part-inputs button { min-height: 40px; font-size: 12px; }
+.series-status { display: grid; gap: 8px; background: #f5edf9; border-radius: 8px; padding: 12px; font-size: 13px; }
+.series-status span { display: block; color: #82608f; font-size: 11px; margin-bottom: 3px; }
+.series-status strong { color: #4f355e; line-height: 1.6; overflow-wrap: anywhere; }
+.series-basic-status { padding-bottom: 8px; border-bottom: 1px solid #dfd0e8; font-size: 12px; color: #74617f; line-height: 1.8; }
+.series-final-title { color: #4f355e; font-weight: 700; }
+.series-final-values { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 12px; }
+.series-final-values strong { font-size: 16px; }
+.series-final-note { color: #74617f; font-size: 11px; line-height: 1.8; }
+.series-aura-status { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin-top: 8px; }
+.series-aura-effect { padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #faf5fc; overflow-wrap: anywhere; }
+.series-aura-effect span, .series-aura-effect small { display: block; color: #74617f; font-size: 11px; line-height: 1.7; }
+.series-aura-effect b { display: block; color: #4f355e; font-size: 13px; line-height: 1.8; }
+.series-aura-inputs select { width: 130px; }
+.series-note { font-size: 12px; color: #74617f; line-height: 1.8; }
+.series-table-wrap { overflow: auto; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; }
+.series-table-wrap th, .series-table-wrap td { white-space: nowrap; padding: 9px 12px; }
+.series-table-wrap th { background: #eee4f4; color: #674079; }
+.series-table-wrap tbody tr:nth-child(even) { background: #fcf9fe; }
+.series-growth { max-height: 340px; }
+.series-growth th { position: sticky; top: 0; }
+.series-part details, .card:has(.series-table-wrap) details { margin-top: 12px; }
+.series-part summary, .card:has(.series-table-wrap) summary { cursor: pointer; font-size: 13px; font-weight: 700; color: #725080; padding: 8px 0; }
+.series-evolutions { padding-left: 20px; font-size: 12px; line-height: 1.8; }
+.series-evolutions li { margin-bottom: 8px; }
+@media(max-width:700px) { .series-parts { grid-template-columns: minmax(0,1fr); } .series-part { padding: 12px; } #series-controls select { font-size: 16px; } }
