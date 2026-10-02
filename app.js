@@ -187,36 +187,16 @@ async function showCategory() {
 
 const $ = (id) => document.getElementById(id);
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const deferImages = typeof window.IntersectionObserver === 'function';
-const img = (src, alt='', cls='thumb') => src ? `<img class="${escapeHtml(cls)}" loading="lazy" decoding="async" ${deferImages ? 'data-src' : 'src'}="${escapeHtml(src)}" alt="${escapeHtml(alt)}">` : '';
+const deferImages = window.VisualImages.deferred;
+const img = (src, alt='', cls='thumb') => {
+  if (!src) return '';
+  const url = window.VisualImages.source(src, cls);
+  const cached = window.VisualImages.ready.has(url);
+  return `<img class="${escapeHtml(cls)}" loading="${cached ? 'eager' : 'lazy'}" decoding="async" ${deferImages && !cached ? 'data-src' : 'src'}="${escapeHtml(url)}" alt="${escapeHtml(alt)}">`;
+};
+const scheduleImagePrefetch = (current, next=[]) => window.VisualImages.prefetch(current, next);
 function setupLazyImages() {
-  if (!deferImages) return;
-  const observed = new Set();
-  const observer = new IntersectionObserver(entries => {
-    for (const entry of entries) if (entry.isIntersecting) {
-      const image = entry.target;
-      image.src = image.dataset.src;
-      image.removeAttribute('data-src');
-      observer.unobserve(image);
-      observed.delete(image);
-    }
-  }, {rootMargin: '160px'});
-  const watch = root => {
-    const images = root.querySelectorAll ? [...root.querySelectorAll('img[data-src]')] : [];
-    if (root.matches?.('img[data-src]')) images.push(root);
-    for (const image of images) if (!observed.has(image)) {
-      observed.add(image);
-      observer.observe(image);
-    }
-  };
-  watch(document);
-  new MutationObserver(mutations => {
-    for (const image of observed) if (!image.isConnected) {
-      observer.unobserve(image);
-      observed.delete(image);
-    }
-    for (const mutation of mutations) for (const node of mutation.addedNodes) watch(node);
-  }).observe(document.body, {childList: true, subtree: true});
+  window.VisualImages.setup();
 }
 const skillIconSrc = (skill) => {
   return skill?.image || '';
@@ -898,6 +878,7 @@ function renderList() {
     shown = Math.min(items.length, shown + batchSize);
     $('list').insertAdjacentHTML('beforeend', items.slice(start, shown).map(listItemHtml).join('') + moreHtml());
     watchMore();
+    scheduleImagePrefetch(items.slice(start, shown).map(x => x.image), items.slice(shown, shown + 16).map(x => x.image));
   };
   $('list').onclick = event => {
     if (event.target.closest('.list-more')) { appendMore(); return; }
@@ -915,6 +896,7 @@ function renderList() {
   };
   watchMore();
   if (!selectedId && items.length) selectedId = String(items[0].id);
+  scheduleImagePrefetch(items.slice(0, shown).map(x => x.image), items.slice(shown, shown + 16).map(x => x.image));
 }
 
 function effectPillsHtml(effects, limit = 3) {
@@ -1453,11 +1435,13 @@ function renderSynchro() {
         <p class="synchro-effect">${escapeHtml((item.passives || []).map(p => p.text).filter(Boolean).join(' / ') || item.effectText || '効果の説明なし')}</p>
       </div>
       <div class="synchro-conditions"><p class="synchro-condition-count">共鳴条件（${(item.conditions || []).length}）</p>
-        <div class="synchro-faces">${(item.conditions || []).map(c => `<figure class="synchro-face" data-card-key="${escapeHtml(c.ownershipKey)}">${c.image ? img(c.image, c.displayName, '') : '<span>画像なし</span>'}<figcaption>${escapeHtml(c.displayName)}<br>${escapeHtml(c.subtitle)}</figcaption></figure>`).join('')}</div>
+        <div class="synchro-faces">${(item.conditions || []).map(c => `<figure class="synchro-face" data-card-key="${escapeHtml(c.ownershipKey)}">${c.image ? img(c.image, c.displayName, 'synchro-image') : '<span>画像なし</span>'}<figcaption>${escapeHtml(c.displayName)}<br>${escapeHtml(c.subtitle)}</figcaption></figure>`).join('')}</div>
       </div>
     </article>`).join('')}</div>`;
   $('synchro-prev').onclick = () => { synchroPage = Math.max(0, synchroPage - 1); renderDetail(); $('detail').scrollTop = 0; };
   $('synchro-next').onclick = () => { synchroPage = Math.min(pages - 1, synchroPage + 1); renderDetail(); $('detail').scrollTop = 0; };
+  const images = rows => rows.flatMap(x => (x.conditions || []).map(c => c.image));
+  scheduleImagePrefetch(images(tiles), images(items.slice((synchroPage + 1) * pageSize, (synchroPage + 2) * pageSize)));
 }
 
 function isNumericValue(v) {
