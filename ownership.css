@@ -20,6 +20,11 @@ body:has(button[data-tab="synchro_calc"].active) aside {display:none}
 .own-totals .table-wrap th,.own-totals .table-wrap td {padding:5px 14px;text-align:center;vertical-align:middle;line-height:1.35;white-space:nowrap}
 .own-totals .table-wrap thead th {white-space:nowrap}
 .own-totals .table-wrap tbody th {position:static}
+.own-totals .own-comparison-table thead {position:sticky;top:0;z-index:2}
+.own-totals .own-comparison-table thead th {position:static}
+.own-totals [data-own-max-effect] {background:#f1f8f7;color:#28534c}
+.own-totals .own-maximum-heading,.own-totals .own-comparison-table thead tr:last-child th:nth-child(n+4) {background:#e2f1ed;color:#28534c}
+.own-totals [data-own-max-effect="ratio"],.own-totals .own-maximum-heading,.own-totals .own-comparison-table thead tr:last-child th:nth-child(4) {border-left:2px solid #aaccc1}
 .missing-face img {filter:brightness(.46) saturate(.75);opacity:1}.owned-face img {filter:none;outline:2px solid #22c65e;border-radius:6px}
 .synchro-effect {min-height:4.2em;border:1px solid #e5daed;border-radius:6px;padding:3px 10px;margin-bottom:10px;background:#fff}
 .synchro-condition-count {display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-weight:700}

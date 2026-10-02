@@ -421,11 +421,33 @@ function ownBonusCardHtml(card) {
     <div class="own-bonus-effects">${(card.maxAwakeningBonuses || []).map(b => `<p>${escapeHtml(b.text)}</p>`).join('')}</div>
   </article>`;
 }
-function ownTotalsTable(rows) {
+function ownMaximumTotals(now = Date.now()) {
+  const cards = DATA.roster.filter(card => ownIsReleased(card.startAt, now));
+  const owned = new Set(cards.map(card => card.ownershipKey));
+  const awakenings = new Map(cards.filter(card => card.kind === 'center_memoria').map(card => [card.id, card.maxAwakening]));
+  return mergeOwnedTotals(
+    synchroTotals(DATA.synchro.filter(item => ownRecordIsReleased(item, now)), owned),
+    maxAwakeningTotals(cards, owned, awakenings, now, ownState.bonusTarget));
+}
+function ownTotalsTable(rows, maximumRows) {
   const valueText = (row, value) => (value >= 0 ? '+' : '') + ownNumber(value * (OWN_PERCENT.has(row.key) ? 100 : 1)) + (OWN_PERCENT.has(row.key) ? '％' : '');
-  const effects = rows.filter(row => row.ratio || row.add || row.by_level).map(row =>
-    `<tr data-own-parameter="${escapeHtml(row.key)}"><th scope="row">${escapeHtml(row.name)}</th><td data-own-effect="ratio">${row.ratio ? `${ownNumber(row.ratio*100)}％` : '—'}</td><td data-own-effect="add">${row.add ? valueText(row,row.add) : '—'}</td><td data-own-effect="by_level"${row.by_level ? ` title="C.Rank×${ownNumber(row.by_level)}"` : ''}>${row.by_level ? valueText(row,row.by_level*ownState.rank) : '—'}</td></tr>`);
-  return `<div class="table-wrap"><table><thead><tr><th>能力</th><th>割合</th><th>固定増加</th><th>C.Rank ${ownState.rank} 増加</th></tr></thead><tbody>${effects.join('') || '<tr><td colspan="4">計算対象の効果はありません</td></tr>'}</tbody></table></div>`;
+  const current = new Map(rows.map(row => [row.key, row]));
+  const maximum = new Map((maximumRows || []).map(row => [row.key, row]));
+  const abilities = new Map([...maximum, ...current]);
+  const cells = (row, attribute) => ['ratio','add','by_level'].map(mode => {
+    const value = row[mode];
+    const text = !value ? '—' : mode === 'ratio' ? `${ownNumber(value*100)}％` : valueText(row, value * (mode === 'by_level' ? ownState.rank : 1));
+    return `<td ${attribute}="${mode}"${mode === 'by_level' && value ? ` title="C.Rank×${ownNumber(value)}"` : ''}>${text}</td>`;
+  }).join('');
+  const effects = [...abilities.values()].filter(row => [current.get(row.key), maximum.get(row.key)].some(value => value && (value.ratio || value.add || value.by_level))).map(row => {
+    const empty = {key:row.key, ratio:0, add:0, by_level:0};
+    return `<tr data-own-parameter="${escapeHtml(row.key)}"><th scope="row">${escapeHtml(row.name)}</th>${cells(current.get(row.key) || empty, 'data-own-effect')}${maximumRows ? cells(maximum.get(row.key) || empty, 'data-own-max-effect') : ''}</tr>`;
+  });
+  const headings = `<th>割合</th><th>固定増加</th><th>C.Rank ${ownState.rank} 増加</th>`;
+  const header = maximumRows
+    ? `<tr><th rowspan="2" scope="col">能力</th><th colspan="3" scope="colgroup">所持分の合計</th><th colspan="3" scope="colgroup" class="own-maximum-heading">最大値（全所持・最大開花）</th></tr><tr>${headings}${headings}</tr>`
+    : `<tr><th>能力</th>${headings}</tr>`;
+  return `<div class="table-wrap"><table${maximumRows ? ' class="own-comparison-table"' : ''}><thead>${header}</thead><tbody>${effects.join('') || `<tr><td colspan="${maximumRows ? 7 : 4}">計算対象の効果はありません</td></tr>`}</tbody></table></div>`;
 }
 function fitOwnedTotalsTable() {
   for (const table of document.querySelectorAll('.own-totals table')) {
@@ -437,9 +459,10 @@ function fitOwnedTotalsTable() {
       const width = range.getBoundingClientRect().width + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 1;
       columnWidth = Math.max(columnWidth, Math.ceil(width / cell.colSpan));
     }
-    const tableWidth = columnWidth * 4;
+    const columns = table.classList.contains('own-comparison-table') ? 7 : 4;
+    const tableWidth = columnWidth * columns;
     table.style.width = table.style.minWidth = `${tableWidth}px`;
-    // Reserve the scrollbar and borders outside the table's four columns.
+    // Reserve the scrollbar and borders outside the table columns.
     const frame = table.parentElement;
     const frameWidth = frame.offsetWidth - frame.clientWidth;
     frame.style.width = `${tableWidth + frameWidth + 1}px`;
@@ -452,6 +475,7 @@ function renderOwnedSynchro() {
   const totals = synchroTotals(releasedSynchro, ownState.keys);
   const bonuses = maxAwakeningTotals(DATA.roster, ownState.keys, ownState.awakenings);
   const combined = mergeOwnedTotals(totals, bonuses);
+  const maximum = ownMaximumTotals();
   const bonusView = ownState.view === 'bonus';
   const roster = ownFilteredRoster();
   const pageSize = bonusView ? 24 : 240;
@@ -511,8 +535,10 @@ function renderOwnedSynchro() {
       <label>C.Rank <input id="own-rank" type="number" min="1" step="1" value="${ownState.rank}"></label>
       <div class="own-bonus-target"><label>効果を受けるメンバー <select id="own-bonus-role">${ownOptions([['center','センター'],['non_center','センター以外']],ownState.bonusTarget.role)}</select></label>${ownState.bonusTarget.role === 'non_center' ? `<label>メンバー <select id="own-bonus-character">${ownOptions([['0','指定なし（全員対象のみ）'],...bonusTargetCharacters],String(ownState.bonusTarget.characterId))}</select></label>` : ''}</div>
       <p class="source">名簿のチェックで条件を満たしたシンクロと、開花設定で最大開花に達したセンターノギメモのボーナスを合計します。センター／センター以外を選び、特定メンバー・期生限定の効果は選んだメンバーにだけ反映します。C.Rank は効果を受けるメンバーの値です。同じ能力は1行にまとめ、割合・固定・C.Rank の増加分を別の列に表示します。カード本体の能力値は含みません。</p>
-      ${ownTotalsTable(combined.rows)}
+      <p class="source">左は所持チェックと開花設定に基づく合計です。右の最大値は、現在公開中のすべてのシンクロと、すべてのセンターノギメモの最大開花ボーナスの合計です。所持チェック・開花設定に関係なく表示します。C.Rank・対象メンバーは左右共通です。</p>
+      ${ownTotalsTable(combined.rows, maximum.rows)}
       ${combined.unsupported.length ? `<p>個別確認が必要な効果：${combined.unsupported.length}件（合計から除外）</p>` : ''}
+      ${maximum.unsupported.length ? `<p>最大値で個別確認が必要な効果：${maximum.unsupported.length}件（合計から除外）</p>` : ''}
     </section>
     <section id="own-results"><h3>シンクロ別の効果</h3><label>表示 <select id="own-result-filter">${ownOptions([['unlocked','計算対象'],['locked','未達成'],['all','すべて']],ownState.result)}</select></label><span> ${results.length}件</span>
       <p class="source">これは名簿のチェックに基づく簡易計算です。ゲーム内のシンクロプレートは選んだシンクロにだけ使われ、カード自体を所持したことにはなりません。名簿でプレート分をチェックすると、同じカードを条件に持つほかのシンクロも計算対象になり、実際より多くなる場合があります。カード条件が揃っていても、ゲーム内で共鳴するまで効果は発動しません。</p>
