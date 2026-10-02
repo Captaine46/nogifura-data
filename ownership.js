@@ -1,6 +1,6 @@
 'use strict';
 const OWN_COOKIE = 'nogifura_owned_v1_';
-const ownState = {keys: new Set(), scores: new Map(), scoreCardId: 0, rank: 1, kind: 'member', filter: 'all', sort: 'roster', ascending: false, filters: {}, viewPrefs: {}, filtersOpen: false, page: 0, result: 'unlocked', resultPage: 0, loaded: false, storage: ''};
+const ownState = {keys: new Set(), scores: new Map(), awakenings: new Map(), bonusTarget: {role:'center',characterId:0}, view: 'roster', rosterKind: 'member', scoreCardId: 0, rank: 1, kind: 'member', filter: 'all', sort: 'roster', ascending: false, filters: {}, viewPrefs: {}, filtersOpen: false, page: 0, result: 'unlocked', resultPage: 0, loaded: false, storage: '', awakeningStorage: ''};
 const LEGACY_PLATE_PARTS = 4;
 
 function encodeOwned(ids) {
@@ -54,6 +54,37 @@ function loadOwned() {
     const scoreRows = JSON.parse(localStorage.getItem(OWN_COOKIE + 'scores_' + ownedCookiePath()) || '[]');
     if (Array.isArray(scoreRows)) ownState.scores = new Map(scoreRows.filter(([id,score]) => Number.isSafeInteger(id) && id > 0 && Number.isFinite(score) && score > 0));
   } catch (_) { /* Scores are optional; Cookie ownership remains available. */ }
+  try {
+    const rows = JSON.parse(localStorage.getItem(OWN_COOKIE + 'awakenings_' + ownedCookiePath()) || '[]');
+    const cards = new Map(DATA.roster.filter(card => card.kind === 'center_memoria').map(card => [card.id, card]));
+    ownState.awakenings = new Map(Array.isArray(rows) ? rows.filter(row => Array.isArray(row) && row.length === 2 &&
+      Number.isSafeInteger(row[0]) && cards.has(row[0]) && Number.isSafeInteger(row[1]) && row[1] > 0 && row[1] <= cards.get(row[0]).maxAwakening) : []);
+    ownState.awakeningStorage = '開花設定はこのブラウザに自動保存します。';
+  } catch (_) {
+    ownState.awakenings = new Map();
+    ownState.awakeningStorage = '開花設定を読み込めません。現在の設定は一時的です。';
+  }
+  ownState.bonusTarget = {role:'center',characterId:0};
+  try {
+    const target = JSON.parse(localStorage.getItem(OWN_COOKIE + 'bonus_target_' + ownedCookiePath()) || '{}');
+    if (target && typeof target === 'object') ownState.bonusTarget = {role:target.role === 'non_center' ? 'non_center' : 'center',
+      characterId:Number.isSafeInteger(target.characterId) && DATA.roster.some(c => c.kind === 'member' && c.characterId === target.characterId) ? target.characterId : 0};
+  } catch (_) { /* Invalid target preferences do not discard valid awakening settings. */ }
+}
+function saveOwnedAwakenings() {
+  try {
+    localStorage.setItem(OWN_COOKIE + 'awakenings_' + ownedCookiePath(), JSON.stringify([...ownState.awakenings]));
+    localStorage.setItem(OWN_COOKIE + 'bonus_target_' + ownedCookiePath(), JSON.stringify(ownState.bonusTarget));
+    ownState.awakeningStorage = '開花設定はこのブラウザに保存済みです。';
+  } catch (_) { ownState.awakeningStorage = '開花設定を保存できませんでした。現在の設定は再読み込みで失われます。'; }
+}
+function setOwnedAwakening(id, value) {
+  const card = DATA.roster.find(card => card.kind === 'center_memoria' && card.id === id);
+  if (!card || !ownIsReleased(card.startAt) || !ownState.keys.has(card.ownershipKey) ||
+      !Number.isSafeInteger(value) || value < 0 || value > card.maxAwakening) return false;
+  if (value) ownState.awakenings.set(id, value); else ownState.awakenings.delete(id);
+  saveOwnedAwakenings();
+  return true;
 }
 function saveOwnedScores() {
   try {
@@ -110,22 +141,70 @@ function synchroTotals(items, owned) {
   for (const item of items) {
     if (!synchroOwnership(item, owned).unlocked) continue;
     unlocked.push(item);
-    // Deduplicate repeated source rows within each passive, never across synchros.
-    for (const passive of item.passives || []) for (const effect of uniqueEffects(passive.effects || [])) {
-      let key, name, mode, value;
-      if (effect.LogicType === 1 && ['add','ratio','by_level'].includes(effect.Param2)) {
-        key = effect.Param1; name = OWN_PARAM_NAMES[key]; mode = effect.Param2; value = Number(effect.Param3);
-      } else if ([2,6].includes(effect.LogicType) && ['12001','13001'].includes(effect.Param1)) {
-        key = `resistance_${effect.LogicType}_${effect.Param1}`;
-        name = (effect.Param1 === '12001' ? 'デバフ' : 'サゲ効果') + (effect.LogicType === 2 ? '耐性' : '耐性貫通');
-        mode = 'add'; value = Number(effect.Param2);
+    addOwnedPassiveEffects(rows, unsupported, item, item.passives);
+  }
+  return {rows: [...rows.values()], unlocked, unsupported};
+}
+function addOwnedPassiveEffects(rows, unsupported, item, passives) {
+  // Deduplicate repeated source rows within each passive, never across cards/synchros.
+  for (const passive of passives || []) for (const effect of uniqueEffects(passive.effects || [])) {
+    let key, name, mode, value;
+    if (effect.LogicType === 1 && ['add','ratio','by_level'].includes(effect.Param2)) {
+      key = effect.Param1; name = OWN_PARAM_NAMES[key]; mode = effect.Param2; value = Number(effect.Param3);
+    } else if ([2,6].includes(effect.LogicType) && ['12001','13001'].includes(effect.Param1)) {
+      key = `resistance_${effect.LogicType}_${effect.Param1}`;
+      name = (effect.Param1 === '12001' ? 'デバフ' : 'サゲ効果') + (effect.LogicType === 2 ? '耐性' : '耐性貫通');
+      mode = 'add'; value = Number(effect.Param2);
+    }
+    if (!name || !Number.isFinite(value)) { unsupported.push({item, effect}); continue; }
+    if (!rows.has(key)) rows.set(key, {key, name, add: 0, ratio: 0, by_level: 0});
+    rows.get(key)[mode] += value;
+  }
+}
+function maxAwakeningOwnership(card, owned, awakenings, now = Date.now()) {
+  const maximum = card.maxAwakening;
+  const awakening = awakenings.get(card.id) || 0;
+  const supported = card.kind === 'center_memoria' && Number.isSafeInteger(maximum) && maximum > 0;
+  // MemoriaMemoria.IsMaxAwakening (RVA 0x30A07BC) compares awakening_count
+  // with MemoriaData.MaxAwakening; it never reads the card level.
+  const unlocked = supported && ownIsReleased(card.startAt, now) && owned.has(card.ownershipKey) &&
+    Number.isSafeInteger(awakening) && awakening >= maximum && (card.maxAwakeningBonuses || []).length > 0;
+  return {unlocked, supported, awakening, maximum};
+}
+function ownBonusEffectApplies(effect, target) {
+  const scope = effect.scope;
+  if (!scope || !['center','non_center'].includes(target.role)) return false;
+  if (scope.kind === 'all') return true;
+  if (scope.kind === 'center') return target.role === 'center';
+  if (scope.kind !== 'non_center' || target.role !== 'non_center') return false;
+  const selected = DATA.roster.find(c => c.kind === 'member' && c.characterId === target.characterId && ownIsReleased(c.startAt));
+  if (scope.characterIds && (!selected || !scope.characterIds.includes(selected.characterId))) return false;
+  if (scope.generation && (!selected || scope.generation !== selected.generation)) return false;
+  return true;
+}
+function maxAwakeningTotals(cards, owned, awakenings, now = Date.now(), target = ownState.bonusTarget) {
+  const rows = new Map(), unlocked = [], unsupported = [];
+  for (const card of cards) {
+    if (!maxAwakeningOwnership(card, owned, awakenings, now).unlocked) continue;
+    unlocked.push(card);
+    for (const bonus of card.maxAwakeningBonuses) {
+      if (!bonus.calculationSupported) {unsupported.push({item:card, effect:bonus});continue;}
+      // Each description clause is a separate targeted effect. Do not merge
+      // the center/non-center values or deduplicate across different clauses.
+      for (const effect of bonus.calculationEffects || []) if (ownBonusEffectApplies(effect,target)) {
+        addOwnedPassiveEffects(rows, unsupported, card, [{effects:[effect]}]);
       }
-      if (!name || !Number.isFinite(value)) { unsupported.push({item, effect}); continue; }
-      if (!rows.has(key)) rows.set(key, {key, name, add: 0, ratio: 0, by_level: 0});
-      rows.get(key)[mode] += value;
     }
   }
   return {rows: [...rows.values()], unlocked, unsupported};
+}
+function mergeOwnedTotals(...totals) {
+  const rows = new Map();
+  for (const total of totals) for (const row of total.rows) {
+    if (!rows.has(row.key)) rows.set(row.key, {...row, add:0, ratio:0, by_level:0});
+    for (const mode of ['add','ratio','by_level']) rows.get(row.key)[mode] += row[mode];
+  }
+  return {rows:[...rows.values()], unsupported:totals.flatMap(total => total.unsupported)};
 }
 const OWN_PARAM_NAMES = {strength:'エフォート',agility:'サンクス',intelligence:'スマイル',vitality:'バイタリティ',max_hp:'HP上限',max_sp:'SP上限',attack:'アピール力',min_attack:'最小アピール',max_attack:'最大アピール',defense:'ディフェンス',physical_defense:'フィジカル',spiritual_defense:'メンタル',penetration_defense:'表現力',penetration_physical_defense:'演技力',penetration_spiritual_defense:'歌唱力',accuracy:'命中値',evasion:'回避値',critical:'会心値',patience:'会心回避',absorption_hp_rate:'HP吸収',reflection_rate:'リフレクト',hp_recovery_rate:'自動HP回復',critical_damage_rate:'会心アピール',physics_critical_damage_up_rate:'フィジカル会心アピール',spiritual_critical_damage_up_rate:'メンタル会心アピール',state_resistance_rate:'状態異常耐性',critical_damage_resistance_rate:'会心アピール耐性',reflection_resistance_rate:'リフレクト耐性'};
 const OWN_PERCENT = new Set(['absorption_hp_rate','reflection_rate','hp_recovery_rate','critical_damage_rate','physics_critical_damage_up_rate','spiritual_critical_damage_up_rate','state_resistance_rate','critical_damage_resistance_rate','reflection_resistance_rate','debuff_resistance','debuff_penetration']);
@@ -285,19 +364,77 @@ function ownRosterPages(cards, size = 240) {
   }
   return pages;
 }
+function setOwnedKind(kind) {
+  ownState.viewPrefs[ownState.kind] = {filter:ownState.filter,sort:ownState.sort,ascending:ownState.ascending,filters:ownState.filters};
+  ownState.kind = kind;
+  const saved = ownState.viewPrefs[kind] || {filter:'all',sort:'roster',ascending:false,filters:{}};
+  ownState.filter=saved.filter; ownState.sort=saved.sort; ownState.ascending=saved.ascending; ownState.filters=saved.filters;
+  ownState.page=0;
+}
+function setOwnedView(view) {
+  if (ownState.view === view || !['roster','bonus'].includes(view)) return;
+  if (view === 'bonus') { ownState.rosterKind=ownState.kind; setOwnedKind('center_memoria'); }
+  else setOwnedKind(ownState.rosterKind);
+  ownState.view=view;
+  renderOwnedSynchro();
+}
+function ownRosterCardHtml(c) {
+  return `<button type="button" class="own-card ${ownState.keys.has(c.ownershipKey) ? 'is-owned' : ''}" data-own-key="${escapeHtml(c.ownershipKey)}" data-rarity="${escapeHtml(c.rarity || '')}" aria-pressed="${ownState.keys.has(c.ownershipKey)}" title="${escapeHtml(c.rarity || '')} · ${escapeHtml(c.displayName)}" aria-label="${escapeHtml(c.rarity || '')} ${escapeHtml(c.displayName)} ${ownState.keys.has(c.ownershipKey) ? '所持' : '未所持'}"><span class="own-picture">${ownState.keys.has(c.ownershipKey) ? '<span class="own-badge" aria-hidden="true">✓</span>' : ''}${c.image ? img(c.image, c.displayName, 'own-card-image') : '<span class="own-no-image">画像なし</span>'}${['N','R','SR','SSR','UR','LR'].includes(c.rarity) ? img('assets/game_ui/member_facelist_rarity_' + c.rarity.toLowerCase() + '.png', '', 'own-rarity') : ''}</span><span class="own-caption">${escapeHtml(c.displayName)}</span></button>`;
+}
+function ownBonusCardHtml(card) {
+  const state = maxAwakeningOwnership(card, ownState.keys, ownState.awakenings);
+  const owned = ownState.keys.has(card.ownershipKey);
+  const options = state.supported ? Array.from({length:state.maximum+1}, (_,i) => [String(i),`Lv${i}${i === state.maximum ? '（最大）' : ''}`]) : [];
+  return `<article class="own-bonus-entry ${state.unlocked ? 'bonus-active' : ''}">
+    <div class="own-bonus-face">${ownRosterCardHtml(card)}<strong>${escapeHtml(card.displayName)}</strong></div>
+    <label>開花 <select data-own-awakening="${card.id}" aria-label="${escapeHtml(card.displayName)} 開花" ${!owned || !state.supported ? 'disabled' : ''}>${ownOptions(options,String(state.awakening))}</select></label>
+    <span class="own-bonus-status">${state.unlocked ? '✓ 最大開花' : !owned ? 'カードを押して所持登録' : !state.supported ? '開花上限を確認できません' : !(card.maxAwakeningBonuses || []).length ? '最大強化ボーナスなし' : `最大開花 Lv${state.maximum} で反映`}</span>
+    <div class="own-bonus-effects">${(card.maxAwakeningBonuses || []).map(b => `<p>${escapeHtml(b.text)}</p>`).join('')}</div>
+  </article>`;
+}
+function ownTotalsTable(rows) {
+  const valueText = (row, value) => (value >= 0 ? '+' : '') + ownNumber(value * (OWN_PERCENT.has(row.key) ? 100 : 1)) + (OWN_PERCENT.has(row.key) ? '％' : '');
+  const effects = rows.filter(row => row.ratio || row.add || row.by_level).map(row =>
+    `<tr data-own-parameter="${escapeHtml(row.key)}"><th scope="row">${escapeHtml(row.name)}</th><td data-own-effect="ratio">${row.ratio ? `${ownNumber(row.ratio*100)}％` : '—'}</td><td data-own-effect="add">${row.add ? valueText(row,row.add) : '—'}</td><td data-own-effect="by_level"${row.by_level ? ` title="C.Rank×${ownNumber(row.by_level)}"` : ''}>${row.by_level ? valueText(row,row.by_level*ownState.rank) : '—'}</td></tr>`);
+  return `<div class="table-wrap"><table><thead><tr><th>能力</th><th>割合</th><th>固定増加</th><th>C.Rank ${ownState.rank} 増加</th></tr></thead><tbody>${effects.join('') || '<tr><td colspan="4">計算対象の効果はありません</td></tr>'}</tbody></table></div>`;
+}
+function fitOwnedTotalsTable() {
+  for (const table of document.querySelectorAll('.own-totals table')) {
+    let columnWidth = 0;
+    for (const cell of table.querySelectorAll('th,td')) {
+      const range = document.createRange();
+      range.selectNodeContents(cell);
+      const style = getComputedStyle(cell);
+      const width = range.getBoundingClientRect().width + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 1;
+      columnWidth = Math.max(columnWidth, Math.ceil(width / cell.colSpan));
+    }
+    const tableWidth = columnWidth * 4;
+    table.style.width = table.style.minWidth = `${tableWidth}px`;
+    // Reserve the scrollbar and borders outside the table's four columns.
+    const frame = table.parentElement;
+    const frameWidth = frame.offsetWidth - frame.clientWidth;
+    frame.style.width = `${tableWidth + frameWidth + 1}px`;
+  }
+}
+addEventListener('resize', fitOwnedTotalsTable);
 function renderOwnedSynchro() {
   loadOwned();
   const releasedSynchro = DATA.synchro.filter(item => ownRecordIsReleased(item));
   const totals = synchroTotals(releasedSynchro, ownState.keys);
+  const bonuses = maxAwakeningTotals(DATA.roster, ownState.keys, ownState.awakenings);
+  const combined = mergeOwnedTotals(totals, bonuses);
+  const bonusView = ownState.view === 'bonus';
   const roster = ownFilteredRoster();
+  const pageSize = bonusView ? 24 : 240;
   const rosterPages = !['newest','oldest'].includes(ownState.sort)
-    ? Array.from({length:Math.max(1,Math.ceil(roster.length/240))},(_,i)=>roster.slice(i*240,(i+1)*240))
-    : ownRosterPages(roster);
+    ? Array.from({length:Math.max(1,Math.ceil(roster.length/pageSize))},(_,i)=>roster.slice(i*pageSize,(i+1)*pageSize))
+    : ownRosterPages(roster,pageSize);
   const pages = rosterPages.length;
   ownState.page = Math.min(ownState.page, pages-1);
   const memberCards = new Map();
   for (const card of DATA.roster) if (card.kind === 'member' && ownIsReleased(card.startAt) && !memberCards.has(String(card.characterId))) memberCards.set(String(card.characterId),card);
   const characterIds = new Set(DATA.roster.filter(c => c.kind === ownState.kind && ownIsReleased(c.startAt)).flatMap(c => c.kind === 'member' ? [c.characterId] : (c.characterIds || [])));
+  const bonusTargetCharacters = [...memberCards.values()].sort((a,b) => ownPhonetic(a).localeCompare(ownPhonetic(b),'ja') || a.characterId-b.characterId).map(card => [String(card.characterId),card.characterName]);
   // TownMemberLibraryFilterDialogLayerBase orders its member choices by
   // OG, joining state, graduation date, generation, then phonetic name.
   const characters = [...characterIds].map(id => memberCards.get(String(id))).filter(Boolean)
@@ -325,23 +462,26 @@ function renderOwnedSynchro() {
       : ownState.sort === 'memoria_type'
         ? 'Type順 → レアリティ高い順 → カード順。昇順／降順は Type にだけ適用します。'
         : 'レアリティ順 → Type の小さい順 → カード順。昇順／降順はレアリティにだけ適用します。';
-  $('detail').innerHTML = `<h2>シンクロ計算 · 所持名簿</h2>
-    <p>カードを押して ✓ を付けます。実際に所持しているカードも、シンクロプレートで条件を補ったカードも、ここで同じようにチェックしてください。同じシリーズの下位レアリティも点灯します（LR → UR → SSR → SR → R → N）。もう一度押すと、そのカードだけ解除します。</p>
+  $('detail').innerHTML = `<h2>シンクロ計算 · ${bonusView ? '最大強化ボーナス' : '所持名簿'}</h2>
+    <nav class="own-view-tabs" aria-label="計算設定"><button type="button" id="own-view-roster" aria-pressed="${!bonusView}">所持名簿</button><button type="button" id="own-view-bonus" aria-pressed="${bonusView}">最大強化ボーナス · 開花設定</button></nav>
+    <p>${bonusView ? 'センターノギメモを所持登録して、開花 Lv を設定してください。各カードの最大開花に達すると、最大強化ボーナスをシンクロと合算します。初期値は Lv0 です。シンクロプレートで条件を補っただけのカードは、開花 Lv0 のままにしてください。' : 'カードを押して ✓ を付けます。実際に所持しているカードも、シンクロプレートで条件を補ったカードも、ここで同じようにチェックしてください。同じシリーズの下位レアリティも点灯します（LR → UR → SSR → SR → R → N）。もう一度押すと、そのカードだけ解除します。'}</p>
     <p id="own-storage" class="source">${escapeHtml(ownState.storage)}</p>
-    <div class="own-summary"><strong>チェック済 ${availableCards.filter(c => ownState.keys.has(c.ownershipKey)).length} / ${availableCards.length}</strong><strong>計算対象 ${totals.unlocked.length} / ${releasedSynchro.length}</strong><button id="own-jump">シンクロ別の効果 ↓</button></div>
+    ${bonusView ? `<p id="own-awakening-storage" class="source">${escapeHtml(ownState.awakeningStorage)}</p>` : ''}
+    <div class="own-summary"><strong>チェック済 ${availableCards.filter(c => ownState.keys.has(c.ownershipKey)).length} / ${availableCards.length}</strong><strong>シンクロ ${totals.unlocked.length} / ${releasedSynchro.length}</strong><strong>最大強化ボーナス ${bonuses.unlocked.length}枚</strong><button id="own-jump">シンクロ別の効果 ↓</button></div>
     <div class="own-controls">
-      <label>種類 <select id="own-kind">${ownOptions([['member','メンバー'],['center_memoria','センターノギメモ']],ownState.kind)}</select></label>
+      <label>種類 <select id="own-kind" ${bonusView ? 'disabled' : ''}>${ownOptions([['member','メンバー'],['center_memoria','センターノギメモ']],ownState.kind)}</select></label>
       <label>表示 <select id="own-filter">${ownOptions([['all','すべて'],['owned','所持'],['missing','未所持']],ownState.filter)}</select></label>
       <label>並び順 <span class="own-sort-row"><select id="own-sort">${ownOptions(ownState.kind === 'member' ? [['roster','レアリティ順'],['generation','期別順'],['phonetic','五十音順'],['newest','開始日：新しい順（追加）'],['oldest','開始日：古い順（追加）']] : [['roster','レアリティ順'],['memoria_score','スコア順'],['memoria_type','Type順'],['newest','開始日：新しい順（追加）'],['oldest','開始日：古い順（追加）']],ownState.sort)}</select>${dateOrder ? '' : `<button type="button" id="own-direction" aria-label="${ownState.ascending ? '昇順' : '降順'}。押すと逆順" title="並び順を反転">${ownState.ascending ? '昇順 ↑' : '降順 ↓'}</button>`}</span></label>
     </div>${ownFilterPanel(characters)}<p class="source">${roster.length}枚 · ${orderDescription}</p>
     ${ownState.kind === 'center_memoria' && ownState.sort === 'memoria_score' ? `<div class="own-score-editor"><strong>所持スコア入力</strong>${scoreCards.length ? `<label>カード <select id="own-score-card">${ownOptions(scoreCards.map(card => [String(card.id),card.displayName]),String(ownState.scoreCardId))}</select></label><label>ゲーム表示スコア <input id="own-score-value" type="number" min="0" step="any" value="${ownState.scores.get(ownState.scoreCardId) || ''}" placeholder="0"></label>` : '<span>先にセンターノギメモを所持登録してください。</span>'}<small>入力したスコアはこのブラウザに保存します。</small></div>` : ''}
     ${ownPager('own-roster',ownState.page,pages)}
-    <div class="own-roster">${rosterPages[ownState.page].map(c => `<button type="button" class="own-card ${ownState.keys.has(c.ownershipKey) ? 'is-owned' : ''}" data-own-key="${escapeHtml(c.ownershipKey)}" data-rarity="${escapeHtml(c.rarity || "")}" aria-pressed="${ownState.keys.has(c.ownershipKey)}" title="${escapeHtml(c.rarity || '')} · ${escapeHtml(c.displayName)}" aria-label="${escapeHtml(c.rarity || '')} ${escapeHtml(c.displayName)} ${ownState.keys.has(c.ownershipKey) ? '所持' : '未所持'}"><span class="own-picture">${ownState.keys.has(c.ownershipKey) ? '<span class="own-badge" aria-hidden="true">✓</span>' : ''}${c.image ? `${img(c.image, c.displayName, 'own-card-image')}` : '<span class="own-no-image">画像なし</span>'}${["N","R","SR","SSR","UR","LR"].includes(c.rarity) ? `${img('assets/game_ui/member_facelist_rarity_' + c.rarity.toLowerCase() + '.png', '', 'own-rarity')}` : ""}</span><span class="own-caption">${escapeHtml(c.displayName)}</span></button>`).join('') || `<p>該当する${ownState.kind === 'member' ? 'メンバー' : 'センターノギメモ'}はありません</p>`}</div>
-    <section class="card own-totals"><h3>能力値合計（シンクロ分）</h3>
+    <div class="${bonusView ? 'own-bonus-roster' : 'own-roster'}">${rosterPages[ownState.page].map(c => bonusView ? ownBonusCardHtml(c) : ownRosterCardHtml(c)).join('') || `<p>該当する${ownState.kind === 'member' ? 'メンバー' : 'センターノギメモ'}はありません</p>`}</div>
+    <section class="card own-totals"><h3>能力値合計（シンクロ＋最大強化ボーナス）</h3>
       <label>C.Rank <input id="own-rank" type="number" min="1" step="1" value="${ownState.rank}"></label>
-      <p class="source">上の名簿でチェックしたカードを条件達成として、シンクロの効果を合計します。シンクロプレートを使った条件も同じ名簿でチェックしてください。C.Rank は計算対象メンバーの値です。割合・固定値は別欄に表示し、カード本体の能力値は含みません。</p>
-      <div class="table-wrap"><table><thead><tr><th>能力</th><th>割合加成</th><th>固定加成</th><th>指定 C.Rank の加算値</th></tr></thead><tbody>${totals.rows.map(row => `<tr><th>${escapeHtml(row.name)}</th><td>${row.ratio ? '+'+ownNumber(row.ratio*100)+'%' : '—'}</td><td>${row.add ? '+'+ownNumber(row.add*(OWN_PERCENT.has(row.key)?100:1))+(OWN_PERCENT.has(row.key)?'%':'') : '—'}</td><td>${OWN_PERCENT.has(row.key) ? '+'+ownNumber(row.add*100)+'%' : '+'+ownNumber(row.add+row.by_level*ownState.rank)}</td></tr>`).join('') || '<tr><td colspan="4">カードを選択すると能力合計が表示されます</td></tr>'}</tbody></table></div>
-      ${totals.unsupported.length ? `<p>個別確認が必要な効果：${totals.unsupported.length}件（合計から除外）</p>` : ''}
+      <div class="own-bonus-target"><label>効果を受けるメンバー <select id="own-bonus-role">${ownOptions([['center','センター'],['non_center','センター以外']],ownState.bonusTarget.role)}</select></label>${ownState.bonusTarget.role === 'non_center' ? `<label>メンバー <select id="own-bonus-character">${ownOptions([['0','指定なし（全員対象のみ）'],...bonusTargetCharacters],String(ownState.bonusTarget.characterId))}</select></label>` : ''}</div>
+      <p class="source">名簿のチェックで条件を満たしたシンクロと、開花設定で最大開花に達したセンターノギメモのボーナスを合計します。センター／センター以外を選び、特定メンバー・期生限定の効果は選んだメンバーにだけ反映します。C.Rank は効果を受けるメンバーの値です。同じ能力は1行にまとめ、割合・固定・C.Rank の増加分を別の列に表示します。カード本体の能力値は含みません。</p>
+      ${ownTotalsTable(combined.rows)}
+      ${combined.unsupported.length ? `<p>個別確認が必要な効果：${combined.unsupported.length}件（合計から除外）</p>` : ''}
     </section>
     <section id="own-results"><h3>シンクロ別の効果</h3><label>表示 <select id="own-result-filter">${ownOptions([['unlocked','計算対象'],['locked','未達成'],['all','すべて']],ownState.result)}</select></label><span> ${results.length}件</span>
       <p class="source">これは名簿のチェックに基づく簡易計算です。ゲーム内のシンクロプレートは選んだシンクロにだけ使われ、カード自体を所持したことにはなりません。名簿でプレート分をチェックすると、同じカードを条件に持つほかのシンクロも計算対象になり、実際より多くなる場合があります。カード条件が揃っていても、ゲーム内で共鳴するまで効果は発動しません。</p>
@@ -354,13 +494,16 @@ function renderOwnedSynchro() {
         </article>`;
       }).join('') || '<p>該当するシンクロはありません</p>'}</div>
     </section>`;
+  fitOwnedTotalsTable();
   scheduleImagePrefetch(rosterPages[ownState.page].map(c => c.image), (rosterPages[ownState.page + 1] || []).map(c => c.image));
+  $('own-view-roster').onclick = () => setOwnedView('roster');
+  $('own-view-bonus').onclick = () => setOwnedView('bonus');
+  $('own-bonus-role').onchange = event => {ownState.bonusTarget.role=event.target.value; saveOwnedAwakenings(); renderOwnedSynchro();};
+  if (ownState.bonusTarget.role === 'non_center') $('own-bonus-character').onchange = event => {ownState.bonusTarget.characterId=Number(event.target.value); saveOwnedAwakenings(); renderOwnedSynchro();};
   for (const field of ['kind','filter','sort']) $('own-'+field).onchange = event => {
     if (field === 'kind') {
-      ownState.viewPrefs[ownState.kind] = {filter:ownState.filter,sort:ownState.sort,ascending:ownState.ascending,filters:ownState.filters};
-      ownState.kind = event.target.value;
-      const saved = ownState.viewPrefs[ownState.kind] || {filter:'all',sort:'roster',ascending:false,filters:{}};
-      ownState.filter=saved.filter; ownState.sort=saved.sort; ownState.ascending=saved.ascending; ownState.filters=saved.filters;
+      if (bonusView) return;
+      setOwnedKind(event.target.value);
     } else ownState[field] = event.target.value;
     ownState.page=0;
     renderOwnedSynchro();
@@ -396,6 +539,13 @@ function renderOwnedSynchro() {
     const replacement=[...document.querySelectorAll('[data-own-key]')].find(b=>b.dataset.ownKey===key);
     if (replacement) replacement.focus({preventScroll:true});
   }));
+  document.querySelectorAll('[data-own-awakening]').forEach(select => select.onchange = event => {
+    const id=Number(event.target.dataset.ownAwakening), value=Number(event.target.value);
+    const scroll=$('detail').scrollTop;
+    setOwnedAwakening(id,value); renderOwnedSynchro(); $('detail').scrollTop=scroll;
+    const replacement=[...document.querySelectorAll('[data-own-awakening]')].find(el => Number(el.dataset.ownAwakening) === id);
+    if (replacement) replacement.focus({preventScroll:true});
+  });
   $('own-rank').onchange = event => { const rank=Number(event.target.value); if (!Number.isSafeInteger(rank) || rank<1) {event.target.value=ownState.rank; return;} ownState.rank=rank; saveOwned(); renderOwnedSynchro(); };
   $('own-result-filter').onchange = event => {ownState.result=event.target.value; ownState.resultPage=0; renderOwnedSynchro();};
   for (const [prefix,field,count] of [['own-roster','page',pages],['own-result','resultPage',resultPages]]) {
