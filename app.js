@@ -1031,7 +1031,7 @@ function memberMemoriaBonusHtml(x) {
 
 function equipmentHtml(eq) {
   if (eq.growth) {
-    const part = {...eq.growth, coordinateLabel: [eq.equipmentTypeName, eq.grade, eq.setName].filter(Boolean).join(' / ')};
+    const part = exclusiveEquipmentPart(eq);
     return seriesPartHtml({starRate: part.starRate}, part);
   }
   const levelText = (eq.levels || []).map(l => `Rank${l.EquipmentLevel}`).join(' / ') || (eq.maxLevel ? `Rank${eq.maxLevel}` : '');
@@ -1044,6 +1044,7 @@ function equipmentHtml(eq) {
       <div class="equipment-name">${escapeHtml(eq.name || '')}</div>
       <div class="equipment-sub">${escapeHtml([eq.grade, eq.setName, levelText].filter(Boolean).join(' / '))}</div>
       <div class="equipment-sub">${escapeHtml(eq.text || '')}</div>
+      ${effects ? `<div class="equipment-sub"><b>専用ステータス</b><ul>${effects}</ul></div>` : ''}
     </div>
   </div>`;
 }

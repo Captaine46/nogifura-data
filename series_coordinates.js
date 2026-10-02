@@ -37,10 +37,11 @@ function seriesAuraOptions(kind, selected) {
 function seriesFinalBonus(series, part, level, growLevel, choice = {}) {
   const basic = seriesStatus(level, growLevel, series.starRate);
   const entries = new Map();
-  const add = (id, name, fixed = 0, rate = 0) => {
-    const entry = entries.get(id) || {id, name, fixed: 0, rate: 0};
+  const add = (id, name, fixed = 0, rate = 0, byLevel = 0) => {
+    const entry = entries.get(id) || {id, name, fixed: 0, rate: 0, byLevel: 0};
     entry.fixed += fixed;
     entry.rate = Math.fround(entry.rate + rate);
+    entry.byLevel += byLevel;
     entries.set(id, entry);
   };
   part.basicParameters.forEach((id, index) => {
@@ -50,6 +51,12 @@ function seriesFinalBonus(series, part, level, growLevel, choice = {}) {
   const legend = seriesAuraValue(part, 'legend', choice.legendLevel || 0);
   if (ace.value) add(part.aura.aceParameter, part.aura.aceName, ace.value);
   if (legend.value) add(part.aura.legendParameter, part.aura.legendName, 0, legend.value);
+  for (const effect of part.exclusiveEffects || []) {
+    const value = Number(effect.Value);
+    if (effect.AddType === 2) add(effect.TargetParameter, effect.ParameterName, 0, 0, value);
+    else if (effect.AddType === 1 || effect.TargetParameter >= 20) add(effect.TargetParameter, effect.ParameterName, 0, value);
+    else add(effect.TargetParameter, effect.ParameterName, value);
+  }
   // Fixed contributions can be added only to the same parameter. Ratio modifiers
   // remain member-wide modifiers; equipment stats are not the member's base.
   return [...entries.values()];
@@ -59,6 +66,7 @@ function seriesFinalBonusText(entry) {
   const values = [];
   if (entry.fixed) values.push('+' + seriesNumber(entry.fixed));
   if (entry.rate) values.push('+' + seriesNumber(Math.fround(entry.rate * 100)) + '%');
+  if (entry.byLevel) values.push('+ C.Rank×' + seriesNumber(entry.byLevel));
   return values.join(' / ') || '+0';
 }
 
@@ -83,6 +91,13 @@ function seriesEvolutionHtml(evolutions) {
   return `<ul class="series-evolutions">${evolutions.map(e => `<li><strong>${escapeHtml(e.special ? '特別進化' : '進化')} → ${escapeHtml(e.name)} (${escapeHtml(e.rarity)} / Rank${e.rank})</strong><br>${e.resources.map(r => `${escapeHtml(r.name)} × ${seriesNumber(r.ItemQuantity)}`).join(' / ')}</li>`).join('')}</ul>`;
 }
 
+function seriesExclusiveStatusHtml(part) {
+  if (!part.exclusiveEffects?.length) return '';
+  return `<div class="series-exclusive-status"><div class="series-final-title">専用ステータス</div>
+    <div class="series-final-values">${part.exclusiveEffects.map(effect => `<div data-series-exclusive-parameter="${effect.TargetParameter}"><strong>${escapeHtml(effect.formulaText)}</strong></div>`).join('')}</div>
+    <small class="series-final-note">対象メンバー装備時に発動します。C.Rankはメンバーの値です。</small></div>`;
+}
+
 function seriesPartHtml(series, part) {
   const choice = seriesPartChoices.get(part.id) || {};
   const level = part.levels.find(r => r.Id === choice.levelId) || part.levels.at(-1);
@@ -101,6 +116,7 @@ function seriesPartHtml(series, part) {
     <div class="series-part-head">${img(part.image, part.name, 'series-part-image')}<div><div class="kind">${escapeHtml(part.coordinateLabel || part.unitTypeName)}</div><h3>${escapeHtml(part.name)}</h3><p>${escapeHtml(part.Text)}</p></div></div>
     <div class="series-part-inputs"><label>Rank <select data-series-rank="${part.id}">${part.levels.map(r => `<option value="${r.Id}" ${r.Id === level.Id ? 'selected' : ''}>Rank${r.EquipmentLevel}</option>`).join('')}</select></label><label>強化Lv <input data-series-level="${part.id}" type="number" min="0" max="${level.maxGrowLevel}" step="1" value="${growLevel}"></label><button data-series-max="${part.id}" type="button">最高Rank・Lv</button></div>
     <div class="series-part-inputs series-aura-inputs"><label>LEGEND <select data-series-legend="${part.id}">${seriesAuraOptions('legend', normalized.legendLevel)}</select></label><label>ACE <select data-series-ace="${part.id}">${seriesAuraOptions('ace', normalized.aceLevel)}</select></label><button data-series-aura-max="${part.id}" type="button">オーラLv最大</button></div>
+    ${seriesExclusiveStatusHtml(part)}
     <div class="series-status" data-series-status="${part.id}" aria-live="polite">${seriesCurrentStatusHtml(series, part, level, growLevel)}</div>
     <div class="series-aura-status" data-series-aura-status="${part.id}" aria-live="polite">${seriesPartAuraHtml(part, normalized)}</div>
     <p class="series-note">Lv0 → Lv${level.maxGrowLevel} 強化費用：マニー ${seriesNumber(cost.NecessaryMoney)} / 強化ストーン ${seriesNumber(cost.NecessaryMaterialStone)} / 強化クリスタル ${seriesNumber(cost.NecessaryMaterialCrystal)}</p>
@@ -122,7 +138,7 @@ function seriesCurrentStatusHtml(series, part, level, growLevel) {
   return `<div class="series-basic-status"><span>Rank${level.EquipmentLevel} / Lv${growLevel}・基本性能</span><div>${escapeHtml(seriesStatText(part, star))}</div></div>
     <div class="series-final-title">合計効果（このコーデ）</div>
     <div class="series-final-values">${final.map(entry => `<div data-series-final-parameter="${entry.id}"><span>${escapeHtml(entry.name)}</span><strong>${escapeHtml(seriesFinalBonusText(entry))}</strong></div>`).join('')}</div>
-    <small class="series-final-note">固定値は合算、割合は対象能力ごとに表示しています。</small>`;
+    <small class="series-final-note">固定値は合算、割合は対象能力ごとに表示しています。${part.exclusiveEffects?.length ? '専用ステータスを含み、C.Rankの増加分は式で表示しています。' : ''}</small>`;
 }
 
 function renderSeriesCoordinates(series) {
@@ -211,6 +227,11 @@ function exclusiveEquipmentGroups(card) {
   return [...groups.values()];
 }
 
+function exclusiveEquipmentPart(equipment) {
+  return {...equipment.growth, exclusiveEffects: equipment.effects || [],
+    coordinateLabel: [equipment.equipmentTypeName, equipment.grade, equipment.setName].filter(Boolean).join(' / ')};
+}
+
 function exclusiveSelectedVariant(group) {
   const selected = group.variants.find(e => e.id === exclusiveVariantChoices.get(group.key));
   if (selected) return selected;
@@ -238,8 +259,7 @@ function exclusiveEquipmentHtml(card) {
 
 function bindExclusiveEquipments(card) {
   const groups = exclusiveEquipmentGroups(card);
-  const parts = groups.flatMap(g => g.variants).map(e => ({...e.growth,
-    coordinateLabel: [e.equipmentTypeName, e.grade, e.setName].filter(Boolean).join(' / ')}));
+  const parts = groups.flatMap(g => g.variants).map(exclusiveEquipmentPart);
   if (parts.length) bindSeriesParts({parts, starRate: parts[0].starRate});
   document.querySelectorAll('[data-exclusive-variant]').forEach(button => button.onclick = () => {
     const group = groups.find(g => g.key === button.dataset.exclusiveGroupKey);
