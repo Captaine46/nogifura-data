@@ -4,9 +4,10 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>乃木坂的フラクタル データベース</title>
-<link rel="stylesheet" href="app.css?v=cec4954d4626">
-<link rel="stylesheet" href="ownership.css?v=d8b12a839eee">
+<link rel="stylesheet" href="app.css?v=c5e24e265989">
+<link rel="stylesheet" href="ownership.css?v=11402e6dc1d6">
 <link rel="stylesheet" href="series_coordinates.css?v=683a5d756938">
+<link rel="stylesheet" href="statistics.css?v=0303ffa9e480">
 </head>
 <body>
 <header>
@@ -53,7 +54,7 @@
 <footer class="site-footer">
   <p>作者：<a href="https://x.com/Captaine_46" target="_blank" rel="noopener noreferrer">@Captaine_46（X）</a></p>
   <p>本サイトは「乃木坂的フラクタル」の非公式ファンサイトです。</p>
-  <p>不具合・掲載情報の誤りのご報告、ご意見やアイデアは、<a href="https://x.com/Captaine_46" target="_blank" rel="noopener noreferrer">作者のXのDM</a>へお寄せください。</p>
+  <p>不具合や掲載情報の誤りにお気づきの際や、ご意見・アイデアなどがございましたら、<a href="https://x.com/Captaine_46" target="_blank" rel="noopener noreferrer">作者のXのDM</a>でお知らせいただけますと幸いです。</p>
   <p>掲載情報・計算結果の正確性や最新性は保証していません。ゲーム内の情報を優先してください。掲載内容は参考情報として、ご自身の判断でご活用いただけますと幸いです。画像・名称等の権利は各権利者に帰属します。</p>
 </footer>
 <dialog id="mobile-detail-dialog" aria-labelledby="mobile-detail-title" aria-describedby="mobile-detail-help">
@@ -64,15 +65,20 @@
   </div>
 </dialog>
 <dialog id="library-filter-dialog" aria-labelledby="library-filter-title">
-  <div class="filter-dialog-head"><div><div class="dialog-eyebrow">名簿</div><h2 id="library-filter-title">詳細フィルター</h2><p>同じ分類は「いずれか」、異なる分類は「すべて」に一致。</p></div><button id="close-library-filters" type="button" aria-label="フィルターを閉じる">閉じる ×</button></div>
+  <div class="filter-dialog-head"><div><div id="library-filter-context" class="dialog-eyebrow">名簿</div><h2 id="library-filter-title">詳細フィルター</h2><p id="library-filter-help">同じ分類は「いずれか」、異なる分類は「すべて」に一致。</p></div><button id="close-library-filters" type="button" aria-label="フィルターを閉じる">閉じる ×</button></div>
   <div id="library-filter-body" class="filter-dialog-body"></div>
   <div class="filter-dialog-footer"><button id="reset-library-draft" type="button">条件をクリア</button><span id="library-preview-count" role="status"></span><button id="apply-library-filters" class="primary-action" type="button">この条件で表示</button></div>
 </dialog>
-<script src="data/manifest.js?v=ea0950c5a30e"></script>
+<dialog id="statistics-card-dialog" aria-labelledby="statistics-card-title">
+  <div class="statistics-dialog-heading"><h2 id="statistics-card-title">カードのシンクロ</h2><button id="close-statistics-card" type="button">閉じる ×</button></div>
+  <div id="statistics-card-body"></div>
+</dialog>
+<script src="data/manifest.js?v=caa0c500fa52"></script>
 <script src="image_loading.js?v=c6bb4f4ad4a9"></script>
-<script src="ownership.js?v=cab8c587af9b"></script>
+<script src="ownership.js?v=430860ebb440"></script>
 <script src="series_coordinates.js?v=4c384d766c2f"></script>
+<script src="statistics.js?v=f6da00aaac96"></script>
 <script>if (!location.hash) location.hash = "synchro";</script>
-<script src="app.js?v=94de71c0caa7"></script>
+<script src="app.js?v=b539613e5a42"></script>
 </body>
 </html>

@@ -68,8 +68,13 @@ main > *, .hero > *, .topbar > * {min-width:0}
 .own-filter-choices label {display:inline-flex;align-items:center;gap:5px;min-height:36px;padding:5px 9px;border:1px solid #d8cfe2;border-radius:6px;cursor:pointer;background:#faf8fc}
 .own-filter-choices label:has(input:checked) {border-color:#a72bb8;background:#f7eafa;color:#76218a}
 .own-filter-choices input {accent-color:#a72bb8;width:17px;height:17px;margin:0}
-.own-effect-group {border-bottom:1px solid #ebe4ef}
-.own-effect-group > summary {padding:10px 4px;cursor:pointer;font-weight:700}
+.own-effect-group {border:1px solid #e3dae8;border-radius:8px;margin:8px 0;background:#fff}
+.own-effect-group > summary {display:flex;align-items:center;gap:8px;min-height:44px;padding:12px;cursor:pointer;font-weight:700;color:#50335c}
+.own-effect-group > summary::before {content:'+';color:#9462ac}
+.own-effect-group[open] > summary::before {content:'−'}
+.own-effect-group > summary span {margin-left:auto;flex-shrink:0;font-size:11px;color:#756982}
+.own-effect-group .own-filter-group {margin:0;border:0;padding:0 12px 12px}
+.own-effect-group legend {position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
 #own-clear-filters {min-height:40px;padding:8px 12px;border:1px solid #bdacc7;border-radius:6px;background:white;color:#50335c;cursor:pointer}
 @media(max-width:900px){
   .own-roster{grid-template-columns:repeat(auto-fill,72px);gap:6px}

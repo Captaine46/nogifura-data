@@ -141,7 +141,22 @@ th { background: #efe7f5; color: #5b4768; }
   .synchro-face img, .synchro-face .condition-img { flex-basis: 48px; width: 48px; height: 48px; }
 }
 .synchro-pager { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-.synchro-pager button { cursor: pointer; padding: 8px 14px; background: #efe7f5; border: 1px solid var(--line); border-radius: 6px; color: #5b4768; }
+.synchro-pager button { cursor: pointer; min-height: 44px; padding: 8px 14px; background: #efe7f5; border: 1px solid var(--line); border-radius: 6px; color: #5b4768; }
+.synchro-pager button:disabled { opacity: .4; cursor: default; }
+.page-jump { display: flex; gap: 8px; align-items: center; margin: 0; white-space: nowrap; }
+.page-jump label { display: flex; gap: 6px; align-items: center; }
+.page-jump input { width: 64px; min-height: 44px; padding: 8px 6px; border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--ink); font: inherit; font-size: 16px; text-align: center; }
+.page-jump input:focus-visible { outline: 2px solid #9254b2; outline-offset: 2px; }
+@media (max-width: 400px) {
+  .synchro-pager, .statistics-pager { gap: 8px; }
+  .synchro-pager button, .statistics-pager button { padding: 8px 10px; }
+  .page-jump input { width: 56px; }
+}
+.synchro-filter-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
+.synchro-filter-bar button { min-height: 44px; }
+.synchro-filter-bar .active-library-filters { margin: 0; }
+.library-group-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.library-group-actions button { font-size: 12px; min-height: 36px; }
 body:has(button[data-tab="synchro"].active) main { grid-template-columns: 1fr; }
 body:has(button[data-tab="synchro"].active) aside { display: none; }
 .summary-line { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
@@ -255,6 +270,10 @@ section.detail { background: #f5f2f8; padding: clamp(16px, 2.4vw, 36px); }
 .summary-skill { padding: 14px; border-color: #dbcbe6; background: #f8f3fc; border-radius: 10px; }
 .summary-skill .skill-meta .chip { background: #eadcf4; color: #643581; font-size: 13px; }
 .summary-skill-sub { line-height: 1.65; }
+.memo-boost-estimate, .memo-conditional-estimate { color: #087668; font-weight: 750; font-size: 13px; line-height: 1.65; margin-top: 7px; overflow-wrap: anywhere; }
+.memo-boost-estimate strong, .memo-conditional-estimate strong { display: block; }
+.memo-conditional-estimate { color: #9b4a12; }
+.list-ability-values { color: #a6e6dc; font-size: 12px; line-height: 1.6; margin-top: 5px; }
 #library-filter-dialog { width: min(820px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); padding: 0; border: 1px solid #d5c5e0; border-radius: 18px; color: var(--ink); background: #faf8fc; box-shadow: 0 24px 90px #170c2a66; }
 #library-filter-dialog[open] { display: flex; flex-direction: column; }
 #library-filter-dialog::backdrop { background: #161020a8; backdrop-filter: blur(4px); }
@@ -272,12 +291,11 @@ section.detail { background: #f5f2f8; padding: clamp(16px, 2.4vw, 36px); }
 .library-choices label[hidden] { display: none; }
 .library-choices input { accent-color: #9357b2; width: 16px; height: 16px; flex-shrink: 0; }
 .member-find { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
-.library-choice-group:has(.member-find) .library-choices { max-height: 230px; overflow-y: auto; }
 .library-effect { border: 1px solid var(--line); border-radius: 10px; background: #fff; margin-bottom: 8px; }
-.library-effect summary { display: flex; justify-content: space-between; padding: 14px; cursor: pointer; font-size: 14px; font-weight: 700; }
+.library-effect summary { display: flex; justify-content: space-between; align-items: center; min-height: 44px; gap: 8px; padding: 14px; cursor: pointer; font-size: 14px; font-weight: 700; }
 .library-effect summary::before { content: '+'; margin-right: 10px; color: #9462ac; }
 .library-effect[open] summary::before { content: '−'; }
-.library-effect summary span { margin-left: auto; font-size: 11px; color: var(--muted); }
+.library-effect summary span { margin-left: auto; flex-shrink: 0; font-size: 11px; color: var(--muted); }
 .library-effect fieldset { margin: 0; padding: 0 12px 12px; }
 .library-effect legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .filter-dialog-footer { flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 16px 26px; border-top: 1px solid var(--line); background: #fff; }

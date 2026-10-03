@@ -12,6 +12,11 @@ const SEARCH_HINTS = {
 };
 let tab = TAB_KEYS[location.hash.slice(1)] ? location.hash.slice(1) : 'member';
 function updateSearchLabels() {
+  if (tab === 'synchro' && statisticsState.view === 'cards') {
+    $('search').placeholder = 'メンバー名、カード名、レアリティ、IDを検索...';
+    $('search').ariaLabel = '登場回数ランキングのカードを検索';
+    return;
+  }
   $('search').placeholder = SEARCH_HINTS[tab];
   $('search').ariaLabel = `${TAB_LABELS[tab]}${tab === 'synchro_calc' ? 'の名簿' : ''}を検索`;
 }
@@ -30,7 +35,7 @@ function libraryView() {
 function setLibraryView(values) {
   if (tab !== 'member') {
     Object.assign(libraryView(), values);
-    if (tab === 'center_memoria' && 'sort' in values) setOwnedCenterSort(values.sort);
+    if (tab === 'center_memoria' && 'sort' in values && values.sort !== 'awakening_value') setOwnedCenterSort(values.sort);
     return;
   }
   if ('filters' in values) libraryFilters = values.filters;
@@ -50,7 +55,54 @@ function libraryRecord(card) {
 function libraryMatchesFilters(card, filters) {
   if (!ownMatchesFilters(libraryRecord(card), filters)) return false;
   const bonuses = filters.bonus;
-  return card.kind !== 'member_memoria' || !bonuses?.size || (card.bonusTypes || []).some(id => bonuses.has(String(id)));
+  if (card.kind === 'member_memoria' && bonuses?.size && !(card.bonusTypes || []).some(id => bonuses.has(String(id)))) return false;
+  return card.kind !== 'center_memoria' || !['ability','scope','condition'].some(key => filters['awakening_' + key]?.size) ||
+    (card.awakeningEffects || []).some(effect => centerEffectMatches(effect, filters));
+}
+function centerEffectMatches(effect, filters, includeAbility = true) {
+  return (includeAbility ? ['ability','scope','condition'] : ['scope','condition']).every(key =>
+    !filters['awakening_' + key]?.size || filters['awakening_' + key].has(effect[key]));
+}
+function centerEffectChoices() {
+  const effects = currentItems().flatMap(card => card.awakeningEffects || []);
+  return [['ability','開花ボーナス：能力'],['scope','効果の対象'],['condition','発動条件']].map(([key, name]) => {
+    const choices = new Map(effects.map(effect => [effect[key], effect[key + 'Label']]));
+    return ['awakening_' + key, name, [...choices].sort((a,b) => a[1].localeCompare(b[1], 'ja'))];
+  });
+}
+function centerRankAbilities(filters) {
+  const selected = filters.awakening_ability;
+  return centerEffectChoices()[0][2].map(([key]) => key).filter(key => !selected?.size || selected.has(key));
+}
+function centerAbilityValues(card, filters, keys) {
+  const values = new Map();
+  for (const effect of card.awakeningEffects || []) {
+    if (centerEffectMatches(effect, filters, false)) values.set(effect.ability, Math.max(values.get(effect.ability) || 0, effect.value));
+  }
+  return keys.map(key => values.get(key) || 0);
+}
+function sortCenterAbilityValues(items, filters) {
+  const keys = centerRankAbilities(filters);
+  const scores = new Map(items.map(card => [card, centerAbilityValues(card, filters, keys)]));
+  return [...items].sort((a,b) => {
+    const av = scores.get(a), bv = scores.get(b);
+    for (let i = 0; i < keys.length; i++) if (av[i] !== bv[i]) return bv[i] - av[i];
+    return a.id - b.id;
+  });
+}
+function centerListValuesHtml(card) {
+  if (tab !== 'center_memoria' || !libraryView().filters.awakening_ability?.size) return '';
+  const filters = libraryView().filters, keys = centerRankAbilities(filters);
+  const labels = new Map(centerEffectChoices()[0][2]);
+  const values = centerAbilityValues(card, filters, keys);
+  const lines = keys.map((key,i) => {
+    if (!values[i]) return '';
+    const unit = key.split(':').pop();
+    const amount = unit === 'percent' ? `+${percentValue(values[i])}％` : unit === 'rank' ? `C.Rank×${percentValue(values[i])}` : `+${percentValue(values[i])}`;
+    const effect = (card.awakeningEffects || []).find(effect => effect.ability === key && effect.value === values[i] && centerEffectMatches(effect, filters, false));
+    return `${labels.get(key).replace(/（.*?）$/, '')} ${amount}（${effect.scopeLabel}／${effect.conditionLabel}）`;
+  }).filter(Boolean);
+  return `<div class="list-ability-values">${lines.map(escapeHtml).join('<br>')}</div>`;
 }
 function cloneLibraryFilters(filters) {
   return Object.fromEntries(Object.entries(filters).map(([key, values]) => [key, new Set(values)]));
@@ -71,12 +123,18 @@ function libraryMemberChoices() {
   return [...members].sort((a,b) => a[1].localeCompare(b[1], 'ja'));
 }
 function libraryChoices() {
+  if (tab === 'synchro') return [
+    ['condition', 'シンクロ状態', [['0','共鳴済'],['1','未共鳴']]],
+    ['status', '上昇ステータス', (DATA.synchroFilterStatuses || []).map(x => [String(x.id),x.name])],
+    ['member', 'メンバー', libraryMemberChoices()]
+  ];
   const rarities = new Set(currentItems().map(card => card.rarity));
   return [
     ['rarity', 'レアリティ', (tab === 'member' ? ['LR','UR','SSR','SR','R','N'] : ['SSR','SR','R']).filter(x => rarities.has(x)).map(x => [x,x])],
     ...(tab === 'member_memoria' ? [['bonus', '強化ボーナス', (DATA.libraryMemoriaBonuses || []).map(x => [String(x.id), x.name])]] :
       [['type', 'タイプ', tab === 'center_memoria' ? OWN_MEMORIA_TYPES.map(([id,name]) => [String(id),name]) : Object.entries(UNIT_TYPE)]]),
     ['member', 'メンバー', libraryMemberChoices()],
+    ...(tab === 'center_memoria' ? centerEffectChoices() : []),
     ...(tab === 'member' ? OWN_EFFECT_CATEGORIES.map(([id, name]) => ['effect_' + id, name,
       (DATA.libraryFilters || []).filter(x => x.category === id && ownIsReleased(x.startAt)).map(x => [String(x.id), x.name])]) : [])
   ];
@@ -84,12 +142,21 @@ function libraryChoices() {
 function renderLibraryDraft() {
   $('library-filter-body').innerHTML = libraryChoices().map(([group, name, options]) => {
     const selected = libraryDraft[group] || new Set();
-    const choices = `<fieldset class="library-choice-group"><legend>${escapeHtml(name)}</legend>${group === 'member' ? '<input id="library-member-search" class="member-find" placeholder="人名で探す" aria-label="フィルター内のメンバーを検索">' : ''}<div class="library-choices">${options.map(([value,label]) => `<label data-library-label="${escapeHtml(label)}"><input type="checkbox" data-library-group="${group}" value="${escapeHtml(value)}" ${selected.has(String(value)) ? 'checked' : ''}><span>${escapeHtml(label)}</span></label>`).join('')}</div></fieldset>`;
-    return group.startsWith('effect_') ? `<details class="library-effect" ${selected.size ? 'open' : ''}><summary>${escapeHtml(name)}<span>${selected.size ? selected.size + '件選択' : options.length + '項目'}</span></summary>${choices}</details>` : choices;
+    const memberFind = group === 'member' ? '<input id="library-member-search" class="member-find" placeholder="人名で探す" aria-label="フィルター内のメンバーを検索">' : '';
+    const groupActions = tab === 'synchro' ? `<div class="library-group-actions"><button type="button" data-library-group-action="all" data-group="${group}">全選択</button><button type="button" data-library-group-action="clear" data-group="${group}">選択クリア</button></div>` : '';
+    const inputs = options.map(([value,label]) => `<label data-library-label="${escapeHtml(label)}"><input type="checkbox" data-library-group="${group}" value="${escapeHtml(value)}" ${selected.has(String(value)) ? 'checked' : ''}><span>${escapeHtml(label)}</span></label>`).join('');
+    const choices = `<fieldset class="library-choice-group"><legend>${escapeHtml(name)}</legend>${memberFind}${groupActions}<div class="library-choices">${inputs}</div></fieldset>`;
+    return `<details class="library-effect" data-library-section="${group}" data-option-count="${options.length}" ${selected.size ? 'open' : ''}><summary>${escapeHtml(name)}<span>${selected.size ? selected.size + '件選択' : options.length + '項目'}</span></summary>${choices}</details>`;
   }).join('');
   document.querySelectorAll('[data-library-group]').forEach(input => input.addEventListener('change', () => {
     const values = libraryDraft[input.dataset.libraryGroup] ||= new Set();
     if (input.checked) values.add(input.value); else values.delete(input.value);
+    updateLibraryPreview();
+  }));
+  document.querySelectorAll('[data-library-group-action]').forEach(button => button.addEventListener('click', () => {
+    const group = button.dataset.group;
+    libraryDraft[group] = new Set(button.dataset.libraryGroupAction === 'all' ? libraryChoices().find(x => x[0] === group)[2].map(x => String(x[0])) : []);
+    document.querySelectorAll(`[data-library-group="${group}"]`).forEach(input => { input.checked = libraryDraft[group].has(input.value); });
     updateLibraryPreview();
   }));
   $('library-member-search').addEventListener('input', event => {
@@ -103,8 +170,15 @@ function renderLibraryDraft() {
 }
 function updateLibraryPreview() {
   $('library-preview-count').textContent = `${filteredItems(libraryDraft, true).length}件の${TAB_LABELS[tab]}`;
+  document.querySelectorAll('[data-library-section]').forEach(section => {
+    const count = libraryDraft[section.dataset.librarySection]?.size || 0;
+    section.querySelector('summary span').textContent = count ? `${count}件選択` : `${section.dataset.optionCount}項目`;
+  });
 }
 function openLibraryFilters() {
+  $('library-filter-context').textContent = tab === 'synchro' ? 'シンクロ一覧' : '名簿';
+  $('library-filter-title').textContent = tab === 'synchro' ? 'シンクロフィルター' : '詳細フィルター';
+  $('library-filter-help').textContent = '同じ分類は「いずれか」、異なる分類は「すべて」に一致。' + (tab === 'synchro' ? 'シンクロ状態は「シンクロ計算」の名簿のチェックをもとに判定します。' : tab === 'center_memoria' ? '最大開花の強化後値で比較。能力・対象・条件は同じ効果に一致。選択した能力を高い順に表示（同じ対象・条件は合計、複数能力は項目順）。' : '');
   const view = libraryView();
   libraryDraft = cloneLibraryFilters(view.filters);
   if (view.member) {
@@ -116,8 +190,14 @@ function openLibraryFilters() {
   $('library-filter-dialog').showModal();
 }
 function commitLibraryFilters() {
-  setLibraryView({filters: cloneLibraryFilters(libraryDraft), member: '', rarity: ''});
+  const values = {filters: cloneLibraryFilters(libraryDraft), member: '', rarity: ''};
+  if (tab === 'center_memoria') {
+    if (['ability','scope','condition'].some(key => libraryDraft['awakening_' + key]?.size)) values.sort = 'awakening_value';
+    else if (libraryView().sort === 'awakening_value') values.sort = 'original';
+  }
+  setLibraryView(values);
   selectedId = null;
+  if (tab === 'synchro') synchroPage = 0;
   render();
   $('list').scrollTop = 0;
   $('detail').scrollTop = 0;
@@ -125,6 +205,24 @@ function commitLibraryFilters() {
 }
 
 let synchroPage = 0;
+function synchroOwnedKeys() {
+  if (ownState.loaded) return ownState.keys;
+  // Read saved selections without initializing or writing the calculator state.
+  try {
+    const saved = location.protocol === 'file:' ? JSON.parse(localStorage.getItem(OWN_COOKIE + ownedCookiePath()) || '{}') :
+      {member:readOwnedCookie(OWN_COOKIE + 'm'),center_memoria:readOwnedCookie(OWN_COOKIE + 'c'),plate:Array.from({length:LEGACY_PLATE_PARTS},(_,i)=>readOwnedCookie(OWN_COOKIE + 'p' + i)).join('')};
+    const keys = new Set();
+    for (const kind of ['member','center_memoria']) for (const id of decodeOwned(saved[kind])) keys.add(`${kind}:${id}`);
+    const legacyIds = new Set(decodeOwned(saved.plate));
+    for (const item of DATA.synchro || []) if (legacyIds.has(item.id)) for (const key of item.ownershipRequirements.cardKeys) keys.add(key);
+    return keys;
+  } catch (_) { return new Set(); }
+}
+function synchroMatchesFilters(item, filters, owned) {
+  if (filters.condition?.size && !filters.condition.has(synchroOwnership(item, owned).unlocked ? '0' : '1')) return false;
+  if (filters.status?.size && !(item.filterStatusIds || []).some(id => filters.status.has(String(id)))) return false;
+  return !filters.member?.size || (item.characterIds || []).some(id => filters.member.has(String(id)));
+}
 const pendingLoads = {};
 const pendingDetails = {};
 let detailRenderVersion = 0;
@@ -170,6 +268,7 @@ async function showCategory() {
   closeMobileDetail(false);
   const version = ++renderVersion;
   $('library-filter-dialog').close();
+  $('statistics-card-dialog').close();
   $('member-controls').hidden = !isLibraryTab();
   $('series-controls').hidden = tab !== 'series_coord';
   document.querySelectorAll('button[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
@@ -178,7 +277,7 @@ async function showCategory() {
   $('detail').textContent = '読み込み中…';
   try {
     await loadCategory(TAB_KEYS[tab]);
-    if (tab === 'synchro_calc' || tab === 'member') await loadCategory('roster');
+    if (tab === 'synchro_calc' || tab === 'member' || (tab === 'synchro' && statisticsState.view === 'cards')) await loadCategory('roster');
     if (version === renderVersion) render();
   } catch (error) {
     if (version !== renderVersion) return;
@@ -741,6 +840,7 @@ function scheduleReleaseRefresh() {
 function refreshReleaseVisibility() {
   if (releaseState() !== releaseSnapshot) {
     render();
+    if ($('statistics-card-dialog').open) renderStatisticsCardDetail(statisticsState.detailCardId);
     if ($('library-filter-dialog').open) renderLibraryDraft();
   }
   scheduleReleaseRefresh();
@@ -801,7 +901,7 @@ function renderMemberControls() {
   $('rarity-select').value = view.rarity;
   const sortChoices = [['original','標準順'],['rarity','レアリティ順'],
     ...(tab === 'member' ? [['generation','期別順'],['phonetic','五十音順']] : []),
-    ...(tab === 'center_memoria' ? [['memoria_type','タイプ順']] : []), ['newest','開始日：新しい順']];
+    ...(tab === 'center_memoria' ? [['awakening_value','能力値：高い順'],['memoria_type','タイプ順']] : []), ['newest','開始日：新しい順']];
   $('library-sort').innerHTML = sortChoices.map(([value,label]) => `<option value="${value}">${label}</option>`).join('');
   $('library-sort').value = view.sort;
   $('filter-badge').textContent = libraryFilterCount(view.filters) + (view.member ? 1 : 0) + (view.rarity ? 1 : 0);
@@ -821,10 +921,16 @@ function filteredItems(filters = null, draft = false) {
   let items = currentItems().filter(item => !isLibraryTab() ||
     ((draft || !view.member || (memberId && (tab === 'member' ? [item.characterId] : item.characterIds || []).some(id => String(id) === memberId))) &&
      (draft || !view.rarity || item.rarity === view.rarity) && libraryMatchesFilters(item, filters)));
+  if (tab === 'synchro') {
+    const owned = filters.condition?.size ? synchroOwnedKeys() : new Set();
+    items = items.filter(item => synchroMatchesFilters(item, filters, owned));
+  }
   if (tab === 'series_coord' && $('series-rarity').value) items = items.filter(x => x.rarity === $('series-rarity').value);
   if (isLibraryTab() && view.sort !== 'original') {
     const originals = new Map(items.map(x => [String(x.id), x]));
-    if (tab !== 'member' && view.sort === 'newest') {
+    if (tab === 'center_memoria' && view.sort === 'awakening_value') {
+      items = sortCenterAbilityValues(items, filters);
+    } else if (tab !== 'member' && view.sort === 'newest') {
       items = [...items].sort((a,b) => (ownReleaseTime(b) ?? -Infinity)-(ownReleaseTime(a) ?? -Infinity) || a.id-b.id);
     } else if (tab === 'member_memoria' && view.sort === 'rarity') {
       const ranks = {R:1,SR:2,SSR:3};
@@ -835,6 +941,12 @@ function filteredItems(filters = null, draft = false) {
     }
   }
   if (!terms.length) return items;
+  if (tab === 'synchro') {
+    const cardQuery = synchroCardSearchQuery(raw);
+    if (cardQuery) return items.filter(item => (item.conditions || []).some(condition =>
+      normalizedCardSearchName(condition.displayName) === cardQuery.name &&
+      (!cardQuery.rarity || condition.rarity === cardQuery.rarity)));
+  }
   const rarityQuery = normalizeSearchText(raw).toUpperCase();
   if (terms.length === 1 && ['N', 'R', 'SR', 'SSR', 'UR', 'LR'].includes(rarityQuery) && tab !== 'synchro' && tab !== 'rank_exp') {
     return items.filter(x => String(x.rarity || '').toUpperCase() === rarityQuery);
@@ -859,6 +971,7 @@ function renderList() {
       <div>
         <div class="item-title">${escapeHtml(x.displayName || x.name || x.title)}</div>
         ${tab === 'rank_exp' ? '' : `<div class="item-sub">${escapeHtml(listSubtitle(x))}</div>`}
+        ${centerListValuesHtml(x)}
       </div>
     </button>`;
   const batchSize = 60;
@@ -975,7 +1088,7 @@ function compactNumberRanges(values) {
   return ranges.map(r => r.from === r.to ? String(r.from) : `${r.from}-${r.to}`).join(', ');
 }
 
-function memoSkillRowHtml({skill = {}, title = '', awakenings = [], meta = [], text = '', effects = [], techPairs = [], effectLabel = '効果', boostNote = ''}) {
+function memoSkillRowHtml({skill = {}, title = '', awakenings = [], meta = [], text = '', effects = [], techPairs = [], effectLabel = '効果', boostNote = '', boostEstimate = null, conditionalEstimate = null}) {
   const shownText = text || skillMainText(skill);
   const shownEffects = uniqueEffects(skillMainEffects(skill, effects));
   const iconSrc = skillIconSrc(skill);
@@ -987,6 +1100,8 @@ function memoSkillRowHtml({skill = {}, title = '', awakenings = [], meta = [], t
       <div class="memo-skill-name">${escapeHtml(title || skill.name || skill.Name || '')}</div>
       ${chips ? `<div class="skill-meta">${chips}</div>` : ''}
       ${shownText ? `<div class="skill-text compact">${escapeHtml(shownText)}</div>` : ''}
+      ${memoBoostEstimateHtml(boostEstimate)}
+      ${memoConditionalEstimateHtml(conditionalEstimate)}
     </div>
   </div>`;
 }
@@ -1071,7 +1186,7 @@ function effectSummaryText(effects, fallbackText = '') {
 
 function parseMemoSkillBoostText(text) {
   const s = String(text || '');
-  const m = s.match(/((?:スキル\d(?:・|、|,|\/| )?)+)の強化倍率を(\d+(?:\.\d+)?)倍にする/);
+  const m = s.match(/((?:スキル\d+(?:・|、|,|\/| )?)+)の強化倍率を(\d+(?:\.\d+)?)倍/);
   if (!m) return null;
   const targets = [...m[1].matchAll(/スキル(\d+)/g)].map(x => Number(x[1])).filter(Number.isFinite);
   const factor = Number(m[2]);
@@ -1164,11 +1279,21 @@ function topAwakeningSummaryHtml(title, rows) {
         <div>
           <div class="summary-skill-title">${escapeHtml(r.title)}</div>
           <div class="summary-skill-sub">${escapeHtml(r.text)}</div>
+          ${memoBoostEstimateHtml(r.boostEstimate)}
+          ${memoConditionalEstimateHtml(r.conditionalEstimate)}
         </div>
       </div>`;
       }).join('')}
     </div>
   </div>`;
+}
+
+function memoBoostEstimateHtml(estimate) {
+  return estimate ? `<div class="memo-boost-estimate" data-boost-factor="${escapeHtml(estimate.factor)}"><strong>強化後（×${percentValue(estimate.factor)}・推定）</strong>${escapeHtml(estimate.text)}</div>` : '';
+}
+
+function memoConditionalEstimateHtml(estimate) {
+  return estimate ? `<div class="memo-conditional-estimate" data-final-factor="${escapeHtml(estimate.factor)}"><strong>条件成立時（${estimate.factors.map(factor => '×' + percentValue(factor)).join('')}・推定）</strong>${escapeHtml(estimate.text)}</div>` : '';
 }
 
 function centerAwakeningRows(x) {
@@ -1179,9 +1304,11 @@ function centerAwakeningRows(x) {
     slot: slotLabel(s),
     skillNumberMajor: Number(s.SkillNumberMajor ?? 0),
     skill: s.skill || {},
-    title: `${s.skill?.Name || `スキル ${slotLabel(s)}`} (${slotLabel(s)})`,
+    title: s.skill?.Name || `スキル${s.SkillNumberMajor ?? ''}`,
     text: s.skill?.DescriptionLong || '',
     effects: s.effects || [],
+    boostEstimate: s.boostEstimate || null,
+    conditionalEstimate: s.conditionalEstimate || null,
     techPairs: [['MemoriaSkillMapping', s.Id], ['MemoriaSkill', s.MemoriaSkillId], ['Slot', slotLabel(s)]],
   }))).sort((a, b) => a.awakening - b.awakening || a.sort - b.sort || String(a.title).localeCompare(String(b.title), 'ja'));
 }
@@ -1195,6 +1322,8 @@ function centerMemoriaTopSummaryHtml(x) {
     text: isMemoSkillBoostRow(r) ? r.text : effectSummaryText(r.effects, r.text),
     effects: isMemoSkillBoostRow(r) ? [] : r.effects,
     skill: r.skill,
+    boostEstimate: r.boostEstimate,
+    conditionalEstimate: r.conditionalEstimate,
     boostNote: r.memoBoost ? `ノギメモスキル強化適用：元効果×${percentValue(r.memoBoost.factor)}（${r.memoBoost.text}）` : (isMemoSkillBoostRow(r) ? 'この行は指定スキルの最終値に反映済み' : ''),
   })));
 }
@@ -1223,6 +1352,8 @@ function centerMemoriaSkillsHtml(x) {
             text: r.text,
             effects: isMemoSkillBoostRow(r) ? [] : r.effects,
             techPairs: r.techPairs,
+            boostEstimate: r.boostEstimate,
+            conditionalEstimate: r.conditionalEstimate,
             boostNote: r.memoBoost ? `ノギメモスキル強化適用：元効果×${percentValue(r.memoBoost.factor)}（${r.memoBoost.text}）` : (isMemoSkillBoostRow(r) ? 'この行は指定スキルの最終値に反映済み' : '')
           })).join('')}
         </div>
@@ -1425,26 +1556,60 @@ function renderMemberMemoria(x) {
     ${memberMemoriaSkillsHtml(x)}`;
 }
 
+function synchroTileHtml(item, cardId = null, showOwnership = false) {
+  const ownership = showOwnership ? synchroOwnership(item, ownState.keys) : null;
+  const ownershipText = ownership ? ownership.unlocked ? '✓ 条件達成' : !ownership.supported ? '条件の確認が必要' : '不足 ' + ownership.missing.length + '枚' : '';
+  return `<article class="synchro-tile" data-synchro-id="${item.id}">
+    <div class="synchro-info"><h3>${escapeHtml(item.displayName)}</h3>
+      <p class="synchro-effect">${escapeHtml((item.passives || []).map(p => p.text).filter(Boolean).join(' / ') || item.effectText || '効果の説明なし')}</p>
+    </div>
+    <div class="synchro-conditions"><p class="synchro-condition-count">共鳴条件（${(item.conditions || []).length}）${ownership ? ` <span class="chip">${ownershipText}</span>` : ''}</p>
+      <div class="synchro-faces">${(item.conditions || []).map(c => `<figure class="synchro-face ${c.conditionType === 1 && c.conditionId === cardId ? 'is-matched-card' : ''} ${showOwnership ? ownState.keys.has(c.ownershipKey) ? 'owned-face' : 'missing-face' : ''}" data-card-key="${escapeHtml(c.ownershipKey)}">${c.image ? img(c.image, c.displayName, 'synchro-image') : '<span>画像なし</span>'}<figcaption>${escapeHtml(c.displayName)}<br>${escapeHtml(c.subtitle)}${showOwnership && ['member','center_memoria'].includes(c.targetKind) ? statisticsOwnershipToggle(c) : ''}</figcaption></figure>`).join('')}</div>
+    </div>
+  </article>`;
+}
+
+function paginationHtml(prefix, page, pages, className = 'synchro-pager') {
+  return `<div class="${className}"><button id="${prefix}-prev" type="button" ${page === 0 ? 'disabled' : ''}>前へ</button>
+    <form id="${prefix}-jump" class="page-jump" novalidate><label><input id="${prefix}-page" type="number" inputmode="numeric" min="1" max="${pages}" step="1" value="${page + 1}" aria-label="ページ番号"><span>/ ${pages}</span></label><button type="submit">移動</button></form>
+    <button id="${prefix}-next" type="button" ${page >= pages - 1 ? 'disabled' : ''}>次へ</button></div>`;
+}
+
+function bindPagination(prefix, page, pages, onPageChange) {
+  const form = $(prefix + '-jump');
+  if (!form) return;
+  const input = $(prefix + '-page');
+  $(prefix + '-prev').onclick = () => onPageChange(Math.max(0, page - 1));
+  $(prefix + '-next').onclick = () => onPageChange(Math.min(pages - 1, page + 1));
+  form.onsubmit = event => {
+    event.preventDefault();
+    const value = input.value.trim();
+    const requested = Number(value);
+    if (!value || !Number.isInteger(requested)) { input.value = page + 1; return; }
+    const target = Math.max(1, Math.min(pages, requested)) - 1;
+    input.value = target + 1;
+    if (target !== page) onPageChange(target);
+  };
+}
+
 function renderSynchro() {
+  if (statisticsState.view === 'cards') { if (DATA.roster) renderStatistics(); return; }
   const items = filteredItems();
   const pageSize = 24;
   const pages = Math.max(1, Math.ceil(items.length / pageSize));
   synchroPage = Math.min(synchroPage, pages - 1);
   const tiles = items.slice(synchroPage * pageSize, (synchroPage + 1) * pageSize);
   $('detail').innerHTML = `
+    ${synchroTabsHtml()}
     <h2>シンクロ一覧</h2>
     <p class="source">${items.length}件のシンクロ · 効果の説明はゲームのシンクロ表示に使われる文言です。所持カードやシンクロプレートで補った条件のチェックは「シンクロ計算」の名簿で行えます。</p>
-    <div class="synchro-pager"><button id="synchro-prev" ${synchroPage === 0 ? 'disabled' : ''}>前へ</button><span>${synchroPage + 1} / ${pages}</span><button id="synchro-next" ${synchroPage + 1 >= pages ? 'disabled' : ''}>次へ</button></div>
-    <div class="synchro-gallery">${tiles.map(item => `<article class="synchro-tile">
-      <div class="synchro-info"><h3>${escapeHtml(item.displayName)}</h3>
-        <p class="synchro-effect">${escapeHtml((item.passives || []).map(p => p.text).filter(Boolean).join(' / ') || item.effectText || '効果の説明なし')}</p>
-      </div>
-      <div class="synchro-conditions"><p class="synchro-condition-count">共鳴条件（${(item.conditions || []).length}）</p>
-        <div class="synchro-faces">${(item.conditions || []).map(c => `<figure class="synchro-face" data-card-key="${escapeHtml(c.ownershipKey)}">${c.image ? img(c.image, c.displayName, 'synchro-image') : '<span>画像なし</span>'}<figcaption>${escapeHtml(c.displayName)}<br>${escapeHtml(c.subtitle)}</figcaption></figure>`).join('')}</div>
-      </div>
-    </article>`).join('')}</div>`;
-  $('synchro-prev').onclick = () => { synchroPage = Math.max(0, synchroPage - 1); renderDetail(); $('detail').scrollTop = 0; };
-  $('synchro-next').onclick = () => { synchroPage = Math.min(pages - 1, synchroPage + 1); renderDetail(); $('detail').scrollTop = 0; };
+    <div class="synchro-filter-bar"><button id="open-synchro-filters" type="button" class="primary-action" aria-haspopup="dialog">フィルター <span>${libraryFilterCount(libraryView().filters)}</span></button><button id="clear-synchro-filters" type="button">絞り込みをリセット</button><div class="active-library-filters">${libraryChoices().flatMap(([group,,options]) => options.filter(([id]) => libraryView().filters[group]?.has(String(id))).map(([,name]) => `<span>${escapeHtml(name)}</span>`)).join('')}</div></div>
+    ${paginationHtml('synchro', synchroPage, pages)}
+    <div class="synchro-gallery">${tiles.map(item => synchroTileHtml(item)).join('') || '<p class="list-empty">該当するシンクロはありません。検索や絞り込みを変更してください。</p>'}</div>`;
+  $('open-synchro-filters').onclick = openLibraryFilters;
+  bindSynchroTabs();
+  $('clear-synchro-filters').onclick = () => { setLibraryView({filters:{}}); $('search').value = ''; synchroPage = 0; render(); $('detail').scrollTop = 0; };
+  bindPagination('synchro', synchroPage, pages, page => { synchroPage = page; renderDetail(); $('detail').scrollTop = 0; });
   const images = rows => rows.flatMap(x => (x.conditions || []).map(c => c.image));
   scheduleImagePrefetch(images(tiles), images(items.slice((synchroPage + 1) * pageSize, (synchroPage + 2) * pageSize)));
 }
@@ -1483,6 +1648,7 @@ function renderRankExp(x) {
 
 function renderDetail() {
   const version = ++detailRenderVersion;
+  if (tab === 'synchro') { renderSynchro(); return; }
   const items = filteredItems();
   let x = items.find(i => String(i.id) === String(selectedId)) || items[0];
   if (!x) { $('detail').innerHTML = `<div class="empty">該当する${TAB_LABELS[tab]}はありません</div>`; return; }
@@ -1506,7 +1672,6 @@ function renderDetail() {
   if (tab === 'member') renderMember(x);
   else if (tab === 'center_memoria') renderCenterMemoria(x);
   else if (tab === 'member_memoria') renderMemberMemoria(x);
-  else if (tab === 'synchro') renderSynchro();
   else if (tab === 'rank_exp') renderRankExp(x);
   else if (tab === 'series_coord') renderSeriesCoordinates(x);
 }
@@ -1642,7 +1807,7 @@ $('clear-filters').addEventListener('click', () => {
 let searchRenderTimer = null;
 $('search').addEventListener('input', () => {
   clearTimeout(searchRenderTimer);
-  searchRenderTimer = setTimeout(() => { selectedId = null; synchroPage = 0; ownState.page = 0; render(); }, 120);
+  searchRenderTimer = setTimeout(() => { selectedId = null; synchroPage = 0; statisticsState.page = 0; ownState.page = 0; render(); }, 120);
 });
 window.addEventListener('focus', refreshReleaseVisibility);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshReleaseVisibility(); });

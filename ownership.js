@@ -229,7 +229,7 @@ const OWN_PERCENT = new Set(['absorption_hp_rate','reflection_rate','hp_recovery
 const ownNumber = value => Number(value.toFixed(6)).toLocaleString('ja-JP', {maximumFractionDigits: 6});
 for (const logic of [2,6]) for (const group of ['12001','13001']) OWN_PERCENT.add(`resistance_${logic}_${group}`);
 function ownPager(prefix, page, pages) {
-  return `<div class="synchro-pager"><button id="${prefix}-prev" ${page === 0 ? 'disabled' : ''}>前へ</button><span>${page + 1} / ${pages}</span><button id="${prefix}-next" ${page >= pages - 1 ? 'disabled' : ''}>次へ</button></div>`;
+  return paginationHtml(prefix, page, pages);
 }
 function ownOptions(values, selected) { return values.map(([value,label]) => `<option value="${escapeHtml(value)}" ${selected === value ? 'selected' : ''}>${escapeHtml(label)}</option>`).join(''); }
 const OWN_EFFECT_CATEGORIES = [[1,'バフ'],[2,'状態アップ'],[3,'特殊'],[4,'デバフ'],[5,'状態ダウン'],[6,'特殊パッシブ']];
@@ -262,9 +262,16 @@ function ownFilteredRoster() {
   const filtered = DATA.roster.filter(c => c.kind === ownState.kind && ownIsReleased(c.startAt) && ownMatchesFilters(c) && (ownState.filter === 'all' || ownState.keys.has(c.ownershipKey) === (ownState.filter === 'owned')) && terms.every(t => normalizeSearchText([c.displayName,c.characterName,c.rarity].join(' ')).includes(t)));
   return sortOwnedRoster(filtered, DATA.roster, ownState.sort, ownState.ascending);
 }
+const ownFilterExpansion = {};
+function rememberOwnFilterExpansion() {
+  document.querySelectorAll('[data-own-filter-section]').forEach(section => {
+    ownFilterExpansion[section.dataset.ownFilterKind + ':' + section.dataset.ownFilterSection] = section.open;
+  });
+}
 function ownFilterChoices(group, values) {
   const selected = ownSelected(group);
-  return `<fieldset class="own-filter-group"><legend>${escapeHtml(values.title)}${selected.size ? ` · ${selected.size}` : ''}</legend><div class="own-filter-choices">${values.options.map(([value,label]) => `<label><input type="checkbox" data-own-filter-group="${group}" value="${escapeHtml(String(value))}" ${selected.has(String(value)) ? 'checked' : ''}><span>${escapeHtml(label)}</span></label>`).join('')}</div></fieldset>`;
+  const expanded = ownFilterExpansion[ownState.kind + ':' + group] ?? !!selected.size;
+  return `<details class="own-effect-group" data-own-filter-section="${group}" data-own-filter-kind="${ownState.kind}" ${expanded ? 'open' : ''}><summary>${escapeHtml(values.title)}<span>${selected.size ? selected.size + '件選択' : values.options.length + '項目'}</span></summary><fieldset class="own-filter-group"><legend>${escapeHtml(values.title)}</legend><div class="own-filter-choices">${values.options.map(([value,label]) => `<label><input type="checkbox" data-own-filter-group="${group}" value="${escapeHtml(String(value))}" ${selected.has(String(value)) ? 'checked' : ''}><span>${escapeHtml(label)}</span></label>`).join('')}</div></fieldset></details>`;
 }
 function ownFilterPanel(characters) {
   const kind = ownState.kind;
@@ -276,7 +283,7 @@ function ownFilterPanel(characters) {
   ];
   if (kind === 'member') for (const [category,label] of OWN_EFFECT_CATEGORIES) {
     const options = (DATA.libraryFilters || []).filter(row => row.category === category && ownIsReleased(row.startAt)).map(row => [row.id,row.name]);
-    groups.push(`<details class="own-effect-group" ${ownSelected('effect_' + category).size ? 'open' : ''}><summary>${escapeHtml(label)}${ownSelected('effect_' + category).size ? ` · ${ownSelected('effect_' + category).size}` : ''}</summary>${ownFilterChoices('effect_' + category,{title:label,options})}</details>`);
+    groups.push(ownFilterChoices('effect_' + category,{title:label,options}));
   }
   const active = Object.values(ownState.filters).reduce((sum,items) => sum + items.size, 0);
   return `<details id="own-filter-panel" class="own-filter-panel" ${ownState.filtersOpen ? 'open' : ''}><summary>絞り込み${active ? ` · ${active}件選択` : ''}</summary><div class="own-filter-body">${groups.join('')}<button type="button" id="own-clear-filters">絞り込みを解除</button></div></details>`;
@@ -470,6 +477,7 @@ function fitOwnedTotalsTable() {
 }
 addEventListener('resize', fitOwnedTotalsTable);
 function renderOwnedSynchro() {
+  rememberOwnFilterExpansion();
   loadOwned();
   const releasedSynchro = DATA.synchro.filter(item => ownRecordIsReleased(item));
   const totals = synchroTotals(releasedSynchro, ownState.keys);
@@ -576,6 +584,12 @@ function renderOwnedSynchro() {
     };
   }
   $('own-filter-panel').ontoggle = event => {ownState.filtersOpen = event.target.open;};
+  const filterKind = ownState.kind;
+  document.querySelectorAll('[data-own-filter-section]').forEach(section => {
+    section.ontoggle = event => {
+      if (event.target.isConnected) ownFilterExpansion[filterKind + ':' + section.dataset.ownFilterSection] = section.open;
+    };
+  });
   document.querySelectorAll('[data-own-filter-group]').forEach(input => input.onchange = event => {
     const scroll = $('detail').scrollTop;
     const group = event.target.dataset.ownFilterGroup;
@@ -606,7 +620,6 @@ function renderOwnedSynchro() {
   $('own-rank').onchange = event => { const rank=Number(event.target.value); if (!Number.isSafeInteger(rank) || rank<1) {event.target.value=ownState.rank; return;} ownState.rank=rank; saveOwned(); renderOwnedSynchro(); };
   $('own-result-filter').onchange = event => {ownState.result=event.target.value; ownState.resultPage=0; renderOwnedSynchro();};
   for (const [prefix,field,count] of [['own-roster','page',pages],['own-result','resultPage',resultPages]]) {
-    $(prefix+'-prev').onclick=()=>{ownState[field]=Math.max(0,ownState[field]-1); renderOwnedSynchro();};
-    $(prefix+'-next').onclick=()=>{ownState[field]=Math.min(count-1,ownState[field]+1); renderOwnedSynchro();};
+    bindPagination(prefix, ownState[field], count, page => {ownState[field]=page; renderOwnedSynchro();});
   }
 }
