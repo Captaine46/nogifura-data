@@ -53,6 +53,7 @@ h2 { margin: 4px 0 6px; font-size: 24px; letter-spacing: 0; }
 .skill-title { font-weight: 800; color: #34253d; margin-bottom: 6px; }
 .skill-text { white-space: pre-wrap; line-height: 1.5; color: #51475a; font-size: 14px; }
 .skill-text.compact { font-size: 13px; line-height: 1.45; margin-top: 4px; }
+#member-skill-panel .skill-text { font-size: 16px; line-height: 1.8; overflow-wrap: anywhere; }
 .active-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
 .summary-skill { display: grid; grid-template-columns: 42px 1fr; gap: 9px; align-items: start; border: 1px solid #e5daed; background: #fbf8fd; border-radius: 8px; padding: 9px; }
 .summary-skill.no-icon { grid-template-columns: 1fr; }

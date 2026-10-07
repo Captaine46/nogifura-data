@@ -21,6 +21,8 @@ function updateSearchLabels() {
   $('search').ariaLabel = `${TAB_LABELS[tab]}${tab === 'synchro_calc' ? 'の名簿' : ''}を検索`;
 }
 let selectedId = null;
+const MEMBER_SKILL_ORGANIZED_ENABLED = false;
+let memberSkillView = MEMBER_SKILL_ORGANIZED_ENABLED ? 'organized' : 'game';
 let selectedMember = '';
 let selectedRarity = '';
 let libraryFilters = {};
@@ -1036,19 +1038,25 @@ function skillHeadHtml(skill, title, meta = []) {
   </div>`;
 }
 
-function battleSkillHtml(s) {
+function battleSkillHtml(s, organized = false, relatedSkills = []) {
   return `<div class="card">
     ${skillHeadHtml(s, `アクティブスキル：${s.name || ''}`)}
     ${(s.levels || []).map(l => `<div class="skill-title">Lv ${escapeHtml(l.toLevel)} / 消費SP ${escapeHtml(l.maxSp)}</div>
-      <div class="skill-text">${escapeHtml(l.text)}</div>
+      ${organized ? organizedSkillHtml(l.text, l.effects, relatedSkills, l.toLevel) : `<div class="skill-text">${escapeHtml(l.text)}</div>`}
       `).join('<hr>')}
   </div>`;
 }
 
-function passiveHtml(s) {
+function passiveHtml(s, organized = false, relatedSkills = []) {
+  const linked = organized ? uniqueEffects(s.effects || []).filter(e => e.linkedSkill).map(e => {
+    const label = e.Param1 === 'dead_unit_skill' ? 'アンコールスキル' : 'アドバンススキル';
+    return `<div class="organized-linked-skill"><h4>${escapeHtml(label)}：${escapeHtml(e.linkedSkill.name)}</h4>
+      ${(e.linkedSkill.levels || []).map(l => organizedSkillHtml(l.text, l.effects, relatedSkills, l.toLevel)).join('')}</div>`;
+  }).join('') : '';
   return `<div class="card">
     ${skillHeadHtml(s, `パッシブスキル：${s.name || ''}`, [`開花 ${s.breakthrough ?? ''}`])}
-    <div class="skill-text">${escapeHtml(s.text || '')}</div>
+    ${organized ? organizedSkillHtml(s.text, s.effects, relatedSkills) : `<div class="skill-text">${escapeHtml(s.text || '')}</div>`}
+    ${linked}
   </div>`;
 }
 
@@ -1443,11 +1451,8 @@ function activeSkillSummaryCard(x) {
         </div>
       </div>`;
     }
-    const sameTotal = nearlyEqual(analysis.minPct, analysis.maxPct);
     const totalChips = analysis.maxPct || analysis.minPct
-      ? (sameTotal
-        ? chip(`倍率合計 ${percentValue(analysis.maxPct)}%`)
-        : `${chip(`通常倍率合計 ${percentValue(analysis.minPct)}%`)}${chip(`最大倍率合計 ${percentValue(analysis.maxPct)}%`)}`)
+      ? `${chip(`通常倍率合計 ${percentValue(analysis.minPct)}%`)}${chip(`最大倍率合計 ${percentValue(analysis.maxPct)}%`)}`
       : chip('ステータス参照アピール');
     const formulaLines = (analysis.lines || []).map(line => `<div class="summary-skill-sub">
       ${escapeHtml(line.label)}${line.detail ? ` <span class="appeal-notes">${escapeHtml(line.detail)}</span>` : ''}
@@ -1517,12 +1522,46 @@ function renderMember(x) {
       </div>
     </div>
     ${activeSkillSummaryCard(x)}
-    <div class="grid">
-      <div>${(x.activeSkills || []).map(battleSkillHtml).join('') || '<div class="card">アクティブスキルはありません</div>'}</div>
-      <div>${(x.passiveSkills || []).map(passiveHtml).join('') || '<div class="card">パッシブスキルはありません</div>'}</div>
-    </div>
+    ${MEMBER_SKILL_ORGANIZED_ENABLED ? `<div class="member-skill-tabs" role="tablist" aria-label="スキル説明の表示">
+      ${[['game', 'ゲーム内説明'], ['organized', '整理した説明']].map(([key, label]) => `<button id="member-skill-tab-${key}" type="button" role="tab" data-member-skill-view="${key}" aria-controls="member-skill-panel" aria-selected="${memberSkillView === key}" tabindex="${memberSkillView === key ? '0' : '-1'}">${label}</button>`).join('')}
+    </div>` : ''}
+    <div id="member-skill-panel"${MEMBER_SKILL_ORGANIZED_ENABLED ? ` role="tabpanel" aria-labelledby="member-skill-tab-${memberSkillView}"` : ''}>${memberSkillContentHtml(x)}</div>
     ${equipmentSection(x)}`;
+  bindMemberSkillTabs(x);
   bindExclusiveEquipments(x);
+}
+
+function memberSkillContentHtml(x) {
+  const organized = MEMBER_SKILL_ORGANIZED_ENABLED && memberSkillView === 'organized';
+  return `${organized ? '<div class="skill-reading-key"><span class="skill-value">青：通常値</span><span class="skill-multiplier">橙：強化倍率</span><span style="color:#1d7048">緑：成立時の値</span></div>' : ''}
+    <div class="grid">
+      <div>${(x.activeSkills || []).map(s => battleSkillHtml(s, organized, x.activeSkills)).join('') || '<div class="card">アクティブスキルはありません</div>'}</div>
+      <div>${(x.passiveSkills || []).map(s => passiveHtml(s, organized, x.activeSkills)).join('') || '<div class="card">パッシブスキルはありません</div>'}</div>
+    </div>`;
+}
+
+function bindMemberSkillTabs(x) {
+  const buttons = [...document.querySelectorAll('[data-member-skill-view]')];
+  const select = button => {
+    memberSkillView = button.dataset.memberSkillView;
+    for (const item of buttons) {
+      item.setAttribute('aria-selected', String(item === button));
+      item.tabIndex = item === button ? 0 : -1;
+    }
+    $('member-skill-panel').setAttribute('aria-labelledby', button.id);
+    $('member-skill-panel').innerHTML = memberSkillContentHtml(x);
+  };
+  buttons.forEach((button, index) => {
+    button.onclick = () => select(button);
+    button.onkeydown = event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+        : (index + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+      select(buttons[next]);
+      buttons[next].focus();
+    };
+  });
 }
 
 function renderCenterMemoria(x) {
